@@ -1,98 +1,169 @@
 "use client";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
+import Navbar from "../../components/Navbar";
 import { useAuth } from "@/components/AuthContext";
 import { useRouter } from "next/navigation";
 
 export default function AuthPage() {
     const [tab, setTab] = useState<"login" | "signup">("login");
-    const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [name, setName] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const { login, signup } = useAuth();
     const router = useRouter();
+    const [serverStatus, setServerStatus] = useState<"checking" | "online" | "offline">("checking");
+
+    useEffect(() => {
+        // Check backend health
+        fetch("/api/health")
+            .then(res => res.ok ? setServerStatus("online") : setServerStatus("offline"))
+            .catch(() => setServerStatus("offline"));
+    }, []);
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError("");
+
+        try {
+            const data = await login(email, password);
+
+            // Redirect based on flow
+            if (data.flow === "kyc") {
+                router.push("/kyc");
+            } else if (data.flow === "fraud") {
+                router.push("/fraud");
+            } else {
+                router.push("/"); // Dashboard
+            }
+        } catch (err: any) {
+            setError(err.message || "Login failed");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSignup = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError("");
+
+        try {
+            const data = await signup(name, email, password);
+            router.push("/kyc"); // Signup always goes to KYC
+        } catch (err: any) {
+            const msg = err.message || "Signup failed";
+            setError(msg);
+            // If fraud/email exists, user might want to login
+            if (msg.toLowerCase().includes("fraud") || msg.toLowerCase().includes("exists")) {
+                setTimeout(() => setTab("login"), 2000);
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError(""); setLoading(true);
-        try {
-            if (tab === "login") {
-                await login(email, password);
-            } else {
-                await signup(name, email, password);
-            }
-            router.push("/kyc");
-        } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Something went wrong");
-        } finally { setLoading(false); }
+        if (tab === "login") await handleLogin(e);
+        else await handleSignup(e);
     };
 
     const steps = ["Sign In", "KYC", "Fraud Check", "Green Score", "Dashboard"];
 
     return (
-        <div style={{ maxWidth: 440, margin: "40px auto" }}>
-            {/* Progress Steps */}
-            <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 32 }}>
-                {steps.map((s, i) => (
-                    <div key={s} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <div style={{
-                            width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                            background: i === 0 ? "#059669" : "#e5e7eb", color: i === 0 ? "#fff" : "#9ca3af", fontSize: 12, fontWeight: 600,
-                        }}>{i + 1}</div>
-                        <span style={{ fontSize: 11, color: i === 0 ? "#059669" : "#9ca3af" }}>{s}</span>
-                        {i < steps.length - 1 && <div style={{ width: 16, height: 2, background: "#e5e7eb" }} />}
-                    </div>
-                ))}
+        <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4 font-sans relative">
+            <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400">
+                <div className={`w-2 h-2 rounded-full ${serverStatus === "online" ? "bg-green-500" : serverStatus === "checking" ? "bg-yellow-500" : "bg-red-500"}`} />
+                Backend: {serverStatus.toUpperCase()}
             </div>
 
-            {/* Card */}
-            <div style={{ background: "#fff", borderRadius: 16, padding: 32, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
-                <div style={{ textAlign: "center", marginBottom: 24 }}>
-                    <div style={{ fontSize: 40, marginBottom: 8 }}>🌿</div>
-                    <h1 style={{ fontSize: 22, color: "#065f46", margin: 0 }}>Green Energy Credit Bank</h1>
-                    <p style={{ color: "#6b7280", fontSize: 14, marginTop: 4 }}>Earn credits for sustainable actions</p>
+            <div className="w-full max-w-md bg-white/5 border border-white/10 p-8 rounded-2xl backdrop-blur-md">
+                <div className="text-center mb-8">
+                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-emerald-600 mb-2">
+                        {tab === "login" ? "Welcome Back" : "Join GECB"}
+                    </h1>
+                    <p className="text-gray-400 text-sm">
+                        {tab === "login" ? "Access your eco-portfolio" : "Start your green journey today"}
+                    </p>
                 </div>
 
-                {/* Tabs */}
-                <div style={{ display: "flex", marginBottom: 20, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
-                    {(["login", "signup"] as const).map(t => (
-                        <button key={t} onClick={() => setTab(t)} style={{
-                            flex: 1, padding: "10px 0", border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14,
-                            background: tab === t ? "#059669" : "#f9fafb", color: tab === t ? "#fff" : "#6b7280",
-                        }}>{t === "login" ? "Log In" : "Sign Up"}</button>
+                <div className="flex bg-white/5 p-1 rounded-xl mb-6">
+                    {(["login", "signup"] as const).map((t) => (
+                        <button
+                            key={t}
+                            onClick={() => { setTab(t); setError(""); }}
+                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === t ? "bg-green-500 text-white shadow-lg" : "text-gray-400 hover:text-white"
+                                }`}
+                        >
+                            {t === "login" ? "Sign In" : "Sign Up"}
+                        </button>
                     ))}
                 </div>
 
-                <form onSubmit={handleSubmit}>
+                {error && (
+                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
+                        <span className="text-xl">⚠️</span>
+                        <p className="text-red-400 text-sm">{error}</p>
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
                     {tab === "signup" && (
-                        <div style={{ marginBottom: 14 }}>
-                            <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#374151", marginBottom: 4 }}>Full Name</label>
-                            <input value={name} onChange={e => setName(e.target.value)} required placeholder="Jane Doe"
-                                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" }} />
+                        <div>
+                            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Full Name</label>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none transition-colors"
+                                placeholder="John Doe"
+                                required
+                            />
                         </div>
                     )}
-                    <div style={{ marginBottom: 14 }}>
-                        <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#374151", marginBottom: 4 }}>Email</label>
-                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="alice@greenbank.io"
-                            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" }} />
+                    <div>
+                        <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Email Address</label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none transition-colors"
+                            placeholder="you@example.com"
+                            required
+                        />
                     </div>
-                    <div style={{ marginBottom: 20 }}>
-                        <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#374151", marginBottom: 4 }}>Password</label>
-                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Pass123!"
-                            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" }} />
+                    <div>
+                        <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Password</label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none transition-colors"
+                            placeholder="••••••••"
+                            required
+                        />
                     </div>
 
-                    {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12, textAlign: "center" }}>{error}</div>}
-
-                    <button type="submit" disabled={loading} style={{
-                        width: "100%", padding: "12px", borderRadius: 8, border: "none", cursor: "pointer",
-                        background: loading ? "#9ca3af" : "#059669", color: "#fff", fontWeight: 600, fontSize: 15,
-                    }}>{loading ? "Please wait..." : tab === "login" ? "Log In" : "Create Account"}</button>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 mt-4"
+                    >
+                        {loading ? "Processing..." : tab === "login" ? "Sign In" : "Create Account"}
+                    </button>
                 </form>
 
-                <div style={{ marginTop: 16, padding: 12, background: "#f0fdf4", borderRadius: 8, textAlign: "center" }}>
-                    <p style={{ fontSize: 12, color: "#065f46", margin: 0, fontWeight: 500 }}>🔑 Demo: alice@greenbank.io / Pass123!</p>
+                <div className="mt-8 pt-6 border-t border-white/10">
+                    <div className="flex justify-between items-center text-xs text-gray-500">
+                        <span>Protected by Actian VectorAI</span>
+                        <div className="flex gap-1">
+                            {steps.map((_, i) => (
+                                <div key={i} className={`w-1.5 h-1.5 rounded-full ${i === 0 ? "bg-green-500" : "bg-gray-700"}`} />
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

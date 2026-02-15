@@ -28,7 +28,7 @@ export default function GreenScorePage() {
     const calculate = async () => {
         setLoading(true);
         try {
-            const res = await apiPost("/api/green-score");
+            const res = await apiPost("/api/green-score", {});
             setScore(res);
             await refreshUser();
         } catch (err) { console.error(err); }

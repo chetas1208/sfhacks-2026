@@ -11,10 +11,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", background: "#f0fdf4", minHeight: "100vh" }}>
+      <body className="bg-[#0a0a0a] min-h-screen">
         <Providers>
           <Navbar />
-          <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>{children}</main>
+          <main className="pt-20 px-4 max-w-7xl mx-auto">{children}</main>
         </Providers>
       </body>
     </html>

@@ -18,7 +18,12 @@ export default function FraudPage() {
     const runCheck = async () => {
         setLoading(true);
         try {
-            const res = await apiPost("/api/fraud");
+            // Simulate device data
+            const payload = {
+                deviceId: "browser-" + Math.random().toString(36).substring(7),
+                ip: "127.0.0.1"
+            };
+            const res = await apiPost("/api/fraud", payload);
             setResult(res);
             await refreshUser();
             setTimeout(() => router.push("/green-score"), 2500);

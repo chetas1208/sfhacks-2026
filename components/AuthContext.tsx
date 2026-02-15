@@ -8,8 +8,8 @@ interface User {
 
 interface AuthCtx {
     user: User | null; loading: boolean;
-    login: (email: string, password: string) => Promise<void>;
-    signup: (name: string, email: string, password: string) => Promise<void>;
+    login: (email: string, password: string) => Promise<any>;
+    signup: (name: string, email: string, password: string) => Promise<any>;
     logout: () => void;
     refreshUser: () => Promise<void>;
 }
@@ -44,7 +44,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || "Login failed"); }
         const data = await res.json();
-        saveSession(data.user, data.accessToken);
+        saveSession(data.user, data.token);
+        return data;
     };
 
     const signup = async (name: string, email: string, password: string) => {
@@ -54,7 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || "Signup failed"); }
         const data = await res.json();
-        saveSession(data.user, data.accessToken);
+        saveSession(data.user, data.token);
+        return data;
     };
 
     const logout = () => {
