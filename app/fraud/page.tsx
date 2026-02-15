@@ -42,19 +42,19 @@ export default function FraudPage() {
     <div style={{ maxWidth: 940, margin: "8px auto", display: "grid", gap: 14 }}>
       <OnboardingStepper currentStep={3} />
       <section className="surface-card" style={{ padding: 30, textAlign: "center" }}>
-        <h2 style={{ color: "#065f46", marginTop: 0, marginBottom: 4 }}>🛡️ Fraud Detection</h2>
-        <p style={{ color: "#6b7280", fontSize: 14, marginTop: 0 }}>CRS Fraud Finder — real-time risk assessment</p>
+        <h2 style={{ color: "var(--ink-secondary)", marginTop: 0, marginBottom: 4 }}>🛡️ Fraud Detection</h2>
+        <p style={{ color: "var(--ink-muted)", fontSize: 14, marginTop: 0 }}>CRS Fraud Finder — real-time risk assessment</p>
 
         {result ? (
           <div style={{ padding: 20 }}>
             <div style={{ fontSize: 62 }}>{result.status === "CLEAR" ? "✅" : "⚠️"}</div>
-            <h3 style={{ color: result.status === "CLEAR" ? "#059669" : "#dc2626", marginBottom: 8 }}>
+            <h3 style={{ color: result.status === "CLEAR" ? "var(--positive)" : "var(--negative)", marginBottom: 8 }}>
               {result.status === "CLEAR" ? "No Fraud Detected" : "Review Required"}
             </h3>
             <div
               style={{
-                background: "linear-gradient(145deg, rgba(15,157,139,0.14), rgba(90,184,255,0.12))",
-                border: "1px solid rgba(9,76,64,0.14)",
+                background: "var(--accent-muted)",
+                border: "1px solid var(--line)",
                 borderRadius: 14,
                 padding: 18,
                 marginTop: 12,
@@ -62,12 +62,12 @@ export default function FraudPage() {
                 minWidth: 220,
               }}
             >
-              <div style={{ fontSize: 36, fontWeight: 800, color: "#059669", lineHeight: 1 }}>
+              <div style={{ fontSize: 36, fontWeight: 800, color: "var(--positive)", lineHeight: 1 }}>
                 {result.riskScore}/100
               </div>
-              <div style={{ color: "#5f7d75", fontSize: 13 }}>Risk Score (lower = better)</div>
+              <div style={{ color: "var(--ink-muted)", fontSize: 13 }}>Risk Score (lower = better)</div>
             </div>
-            <p style={{ color: "#7f9590", fontSize: 13, marginTop: 16 }}>Redirecting to Green Score...</p>
+            <p style={{ color: "var(--ink-soft)", fontSize: 13, marginTop: 16 }}>Redirecting to Green Score...</p>
           </div>
         ) : (
           <button onClick={runCheck} disabled={loading} className="primary-btn" style={{ marginTop: 8 }}>

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Send, MessageCircle, X, Volume2 } from "lucide-react";
+import Image from "next/image";
 
 export default function Chatbot() {
     const [isOpen, setIsOpen] = useState(false);
@@ -55,9 +56,17 @@ export default function Chatbot() {
             {!isOpen && (
                 <button
                     onClick={() => setIsOpen(true)}
-                    className="bg-green-600 text-white p-4 rounded-full shadow-lg hover:bg-green-700 transition transform hover:scale-105"
+                    className="p-0 rounded-full shadow-lg transition transform hover:scale-105 overflow-hidden"
+                    style={{ width: 64, height: 64 }}
                 >
-                    <MessageCircle size={24} />
+                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                        <Image
+                            src="/brand-logo-cropped.png"
+                            alt="Chat"
+                            fill
+                            style={{ objectFit: 'cover', transform: 'scale(1.6)' }}
+                        />
+                    </div>
                 </button>
             )}
 
@@ -65,7 +74,17 @@ export default function Chatbot() {
                 <div className="bg-white rounded-lg shadow-xl w-80 sm:w-96 flex flex-col border border-gray-200" style={{ height: '500px' }}>
                     {/* Header */}
                     <div className="bg-green-600 text-white p-4 rounded-t-lg flex justify-between items-center">
-                        <h3 className="font-bold">Green Guide AI</h3>
+                        <div className="flex items-center gap-3">
+                            <div className="relative w-8 h-8 rounded-full overflow-hidden border border-white/30">
+                                <Image
+                                    src="/brand-logo-cropped.png"
+                                    alt="Bot"
+                                    fill
+                                    style={{ objectFit: 'cover', transform: 'scale(1.6)' }}
+                                />
+                            </div>
+                            <h3 className="font-bold">Green Guide AI</h3>
+                        </div>
                         <button onClick={() => setIsOpen(false)} className="hover:text-gray-200">
                             <X size={20} />
                         </button>

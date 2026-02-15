@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/components/AuthContext";
 import { useRouter } from "next/navigation";
 
@@ -11,9 +11,16 @@ export default function AuthPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [serverStatus, setServerStatus] = useState<"checking" | "online" | "offline">("checking");
 
   const { login, signup } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((res) => (res.ok ? setServerStatus("online") : setServerStatus("offline")))
+      .catch(() => setServerStatus("offline"));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,26 +43,41 @@ export default function AuthPage() {
     }
   };
 
+  const statusColor =
+    serverStatus === "online" ? "var(--positive)" : serverStatus === "checking" ? "#f59e0b" : "var(--negative)";
   return (
     <div style={{ maxWidth: 520, margin: "32px auto" }}>
       <div className="surface-card" style={{ padding: 26 }}>
-        <div style={{ marginBottom: 20 }}>
-          <div>
-            <div className="headline" style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1 }}>
-              {tab === "login" ? "Welcome Back" : "Create Your Account"}
-            </div>
-            <p style={{ margin: "6px 0 0", color: "#6a8880" }}>
-              Access your green rewards journey.
-            </p>
+        <div style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              borderRadius: 999,
+              padding: "6px 10px",
+              border: "1px solid var(--line)",
+              background: "var(--surface-subtle)",
+              color: "var(--ink-secondary)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor }} />
+            API {serverStatus.toUpperCase()}
           </div>
+          <div className="headline" style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.3 }}>
+            {tab === "login" ? "Log in" : "Sign Up"}
+          </div>
+          <div style={{ width: 80 }}></div> {/* Spacer to center title visually if needed, or just remove if left-align is fine. User asked "in front", usually means left of it or above. I'll put it on the left. */}
         </div>
 
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
-            background: "rgba(255,255,255,0.78)",
-            border: "1px solid rgba(9,76,64,0.12)",
+            background: "var(--surface-subtle)",
+            border: "1px solid var(--line)",
             borderRadius: 12,
             padding: 4,
             marginBottom: 16,
@@ -75,8 +97,9 @@ export default function AuthPage() {
                 padding: "10px 10px",
                 cursor: "pointer",
                 fontWeight: 700,
-                background: tab === choice ? "linear-gradient(135deg, #0f9d8b, #1f9967)" : "transparent",
-                color: tab === choice ? "#fff" : "#43685e",
+                background: tab === choice ? "var(--accent-gradient)" : "transparent",
+                color: tab === choice ? "#fff" : "var(--ink-muted)",
+                transition: "all 0.22s ease",
               }}
             >
               {choice === "login" ? "Sign In" : "Sign Up"}
@@ -89,9 +112,9 @@ export default function AuthPage() {
             style={{
               marginBottom: 14,
               borderRadius: 12,
-              border: "1px solid rgba(220,38,38,0.3)",
-              background: "rgba(220,38,38,0.08)",
-              color: "#7f1d1d",
+              border: "1px solid var(--error-border)",
+              background: "var(--error-bg)",
+              color: "var(--error-text)",
               padding: "10px 12px",
               fontSize: 13,
               fontWeight: 600,
@@ -104,73 +127,47 @@ export default function AuthPage() {
         <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
           {tab === "signup" && (
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#5f7d75", fontWeight: 700 }}>Full Name</span>
+              <span className="field-label">Full Name</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Alice Johnson"
                 required
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(9,76,64,0.18)",
-                  padding: "10px 12px",
-                  background: "rgba(255,255,255,0.88)",
-                  color: "#123f34",
-                }}
+                className="field-input"
               />
             </label>
           )}
 
           <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "#5f7d75", fontWeight: 700 }}>Email</span>
+            <span className="field-label">Email</span>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
-              style={{
-                borderRadius: 12,
-                border: "1px solid rgba(9,76,64,0.18)",
-                padding: "10px 12px",
-                background: "rgba(255,255,255,0.88)",
-                color: "#123f34",
-              }}
+              className="field-input"
+              suppressHydrationWarning
             />
           </label>
 
           <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "#5f7d75", fontWeight: 700 }}>Password</span>
+            <span className="field-label">Password</span>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
-              style={{
-                borderRadius: 12,
-                border: "1px solid rgba(9,76,64,0.18)",
-                padding: "10px 12px",
-                background: "rgba(255,255,255,0.88)",
-                color: "#123f34",
-              }}
+              className="field-input"
             />
           </label>
 
           <button
             type="submit"
             disabled={loading}
-            style={{
-              marginTop: 6,
-              border: "none",
-              borderRadius: 12,
-              padding: "11px 14px",
-              cursor: loading ? "not-allowed" : "pointer",
-              background: loading ? "#93c5bd" : "linear-gradient(135deg, #0f9d8b, #1f9967)",
-              color: "#fff",
-              fontWeight: 800,
-              letterSpacing: 0.2,
-            }}
+            className="primary-btn"
+            style={{ marginTop: 6 }}
           >
             {loading ? "Processing..." : tab === "login" ? "Sign In" : "Create Account"}
           </button>

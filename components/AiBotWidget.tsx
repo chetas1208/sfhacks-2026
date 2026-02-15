@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRef } from "react";
+import { useRef, useMemo, useState } from "react";
+import Image from "next/image";
 
 type ChatMessage = {
   role: "user" | "bot";
@@ -124,118 +124,101 @@ export default function AiBotWidget() {
   return (
     <>
       {open && (
-        <div
-          style={{
-            position: "fixed",
-            right: 20,
-            bottom: 88,
-            width: 330,
-            maxWidth: "calc(100vw - 24px)",
-            height: 430,
-            background: "linear-gradient(155deg, rgba(255,255,255,0.96), rgba(237,251,245,0.92))",
-            border: "1px solid rgba(9,76,64,0.16)",
-            borderRadius: 18,
-            boxShadow: "0 18px 40px rgba(0,0,0,0.18)",
-            display: "flex",
-            flexDirection: "column",
-            zIndex: 1000,
-            backdropFilter: "blur(10px)",
-          }}
-        >
-          <div
-            style={{
-              padding: "12px 14px",
-              borderBottom: "1px solid rgba(9,76,64,0.12)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              background: "linear-gradient(130deg, rgba(15,157,139,0.14), rgba(90,184,255,0.12))",
-              borderTopLeftRadius: 18,
-              borderTopRightRadius: 18,
-            }}
-          >
-            <div style={{ fontWeight: 700, color: "#065f46" }}>GreenBot</div>
+        <div className="chat-window">
+          {/* Header */}
+          <div className="chat-header">
+            <div style={{ fontWeight: 800, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ position: "relative", width: 24, height: 24, borderRadius: "50%", overflow: "hidden" }}>
+                <Image
+                  src="/brand-logo-cropped.png"
+                  alt="Logo"
+                  fill
+                  style={{ objectFit: "cover", transform: "scale(1.6)" }}
+                />
+              </div>
+              GreenBot
+            </div>
             <button
               onClick={() => setOpen(false)}
               style={{
                 border: "none",
                 background: "transparent",
                 cursor: "pointer",
-                color: "#4b5563",
-                fontSize: 16,
+                color: "var(--ink-muted)",
+                fontSize: 20,
+                padding: 4,
               }}
             >
-              x
+              ×
             </button>
           </div>
 
-          <div style={{ padding: "10px 12px", display: "flex", gap: 8, flexWrap: "wrap", borderBottom: "1px solid #f3f4f6" }}>
+          {/* Quick Prompts */}
+          <div style={{ padding: "12px 16px", display: "flex", gap: 8, overflowX: "auto", borderBottom: "1px solid var(--line-subtle)" }}>
             {quickPrompts.map((prompt) => (
               <button
                 key={prompt}
                 onClick={() => sendMessage(prompt)}
                 style={{
-                  border: "1px solid rgba(9,76,64,0.14)",
-                  background: "rgba(255,255,255,0.8)",
+                  border: "1px solid var(--line)",
+                  background: "var(--surface-subtle)",
                   borderRadius: 999,
-                  fontSize: 11,
-                  padding: "4px 10px",
+                  fontSize: 12,
+                  padding: "6px 12px",
                   cursor: "pointer",
-                  color: "#0f5f4e",
-                  fontWeight: 700,
+                  color: "var(--ink-secondary)",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  transition: "all 0.2s ease",
                 }}
+                onMouseOver={(e) => (e.currentTarget.style.borderColor = "var(--primary)")}
+                onMouseOut={(e) => (e.currentTarget.style.borderColor = "var(--line)")}
               >
                 {prompt}
               </button>
             ))}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 8px" }}>
+          {/* Messages */}
+          <div className="chat-body">
             {messages.map((m, i) => (
               <div
                 key={`${m.role}-${i}`}
                 style={{
-                  marginBottom: 10,
                   display: "flex",
                   justifyContent: m.role === "user" ? "flex-end" : "flex-start",
                 }}
               >
-                <div
-                  style={{
-                    maxWidth: "85%",
-                    padding: "8px 10px",
-                    borderRadius: 12,
-                    fontSize: 13,
-                    lineHeight: 1.35,
-                    background: m.role === "user" ? "linear-gradient(135deg, #059669, #0f9d8b)" : "#f1f5f9",
-                    color: m.role === "user" ? "#fff" : "#1f3a33",
-                  }}
-                >
+                <div className={`chat-bubble ${m.role}`}>
                   {m.text}
                 </div>
               </div>
             ))}
+            {loading && (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <div className="chat-bubble bot" style={{ display: "flex", gap: 4, padding: "12px 16px" }}>
+                  <span className="dot-flashing" />
+                  <span className="dot-flashing" style={{ animationDelay: "0.2s" }} />
+                  <span className="dot-flashing" style={{ animationDelay: "0.4s" }} />
+                </div>
+              </div>
+            )}
           </div>
 
+          {/* Input Area */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
               sendMessage(input);
             }}
-            style={{ display: "flex", gap: 8, padding: 12, borderTop: "1px solid #e5e7eb" }}
+            className="chat-input-area"
           >
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask GreenBot..."
-              style={{
-                flex: 1,
-                border: "1px solid #d1d5db",
-                borderRadius: 10,
-                padding: "9px 10px",
-                fontSize: 13,
-                outline: "none",
-              }}
+              placeholder="Ask anything..."
+              className="aurora-input"
+              style={{ padding: "10px 14px", fontSize: 14 }}
             />
             <button
               type="button"
@@ -243,31 +226,38 @@ export default function AiBotWidget() {
               disabled={loading}
               title={recording ? "Stop recording" : "Start voice input"}
               style={{
-                border: "none",
-                background: recording ? "#dc2626" : "#0d9488",
-                color: "#fff",
-                borderRadius: 10,
-                padding: "0 12px",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontWeight: 700,
+                transition: "all 0.2s ease",
+                border: "1px solid var(--line)",
               }}
             >
-              {recording ? "■" : "🎤"}
+              {recording ? (
+                <span className="animate-pulse">■</span>
+              ) : (
+                <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              )}
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !input.trim()}
               style={{
                 border: "none",
-                background: loading ? "#9ca3af" : "#059669",
-                color: "#fff",
-                borderRadius: 10,
-                padding: "0 12px",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontWeight: 600,
+                background: "var(--btn-primary-bg)",
+                color: "white",
+                borderRadius: 12,
+                width: 42,
+                height: 42,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: (loading || !input.trim()) ? "not-allowed" : "pointer",
+                boxShadow: "var(--btn-primary-shadow)",
               }}
             >
-              {loading ? "..." : "Send"}
+              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
             </button>
           </form>
         </div>
@@ -275,32 +265,35 @@ export default function AiBotWidget() {
 
       <button
         onClick={() => setOpen((v) => !v)}
+        className="chat-trigger"
         aria-label="Open AI assistant"
-        title="Open GreenBot"
-        style={{
-          position: "fixed",
-          right: 20,
-          bottom: 20,
-          width: 62,
-          height: 62,
-          borderRadius: "50%",
-          border: "2px solid rgba(255,255,255,0.8)",
-          background: "radial-gradient(circle at 30% 25%, #34d399 0%, #059669 55%, #065f46 100%)",
-          color: "#fff",
-          fontSize: 20,
-          cursor: "pointer",
-          boxShadow: "0 10px 26px rgba(5,150,105,0.5), 0 0 0 6px rgba(16,185,129,0.15), inset 0 0 0 1px rgba(255,255,255,0.25)",
-          zIndex: 1001,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
+        style={{ background: "none", border: "none" }}
       >
-        <span style={{ position: "relative", lineHeight: 1 }}>
-          <span style={{ fontSize: 24 }}>🌿</span>
-          <span style={{ position: "absolute", top: -8, right: -10, fontSize: 12 }}>✨</span>
-        </span>
+        <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden" }}>
+          <Image
+            src="/brand-logo-cropped.png"
+            alt="AI Assistant"
+            fill
+            style={{ objectFit: "cover", transform: "scale(1.6)" }}
+          />
+        </div>
+        <span className="spinner" style={{ position: "absolute", width: "100%", height: "100%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white", opacity: loading ? 1 : 0, transition: "opacity 0.3s", zIndex: 10 }} />
       </button>
+
+      {/* Flashing Dot Animation Styles */}
+      <style jsx>{`
+        .dot-flashing {
+          width: 6px;
+          height: 6px;
+          border-radius: 5px;
+          background-color: var(--ink-muted);
+          animation: dot-flashing 1s infinite linear alternate;
+        }
+        @keyframes dot-flashing {
+          0% { opacity: 0.2; transform: translateY(0); }
+          100% { opacity: 1; transform: translateY(-2px); }
+        }
+      `}</style>
     </>
   );
 }

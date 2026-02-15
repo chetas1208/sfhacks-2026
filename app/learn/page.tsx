@@ -32,21 +32,27 @@ export default function Learn() {
             });
     }, []);
 
-    if (loading) return <div className="p-8">Loading lessons...</div>;
+    if (loading) return <div style={{ textAlign: "center", color: "var(--ink-soft)", padding: 64 }}>Loading lessons...</div>;
 
     return (
-        <div className="max-w-4xl mx-auto">
-            <h1 className="text-3xl font-bold mb-6">Education Center</h1>
-            <p className="text-gray-600 mb-8">
-                Learn about sustainability and earn a <strong>1.2x Multiplier</strong> on your next claim!
-            </p>
+        <div style={{ maxWidth: 860, margin: "0 auto", display: "grid", gap: 16 }}>
+            <section className="surface-card" style={{ padding: 22 }}>
+                <h1 className="headline" style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Education Center</h1>
+                <p style={{ margin: "6px 0 0", color: "var(--ink-muted)" }}>
+                    Learn about sustainability and earn a <strong>1.2x Multiplier</strong> on your next claim!
+                </p>
+            </section>
 
-            <div className="space-y-4">
+            <div style={{ display: "grid", gap: 12 }}>
                 {lessons.map((lesson) => (
-                    <Link key={lesson.id} href={`/learn/${lesson.id}`}>
-                        <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition cursor-pointer border-l-4 border-blue-500">
-                            <h2 className="text-xl font-bold mb-2">{lesson.title}</h2>
-                            <p className="text-gray-500">Click to read and take the quiz &rarr;</p>
+                    <Link key={lesson.id} href={`/learn/${lesson.id}`} style={{ textDecoration: "none" }}>
+                        <div className="surface-card" style={{
+                            padding: "18px 20px",
+                            borderLeft: "4px solid var(--accent)",
+                            cursor: "pointer",
+                        }}>
+                            <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800, color: "var(--ink)" }}>{lesson.title}</h2>
+                            <p style={{ margin: 0, color: "var(--ink-muted)", fontSize: 13 }}>Click to read and take the quiz →</p>
                         </div>
                     </Link>
                 ))}

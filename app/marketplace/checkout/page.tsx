@@ -1,148 +1,324 @@
 "use client";
 
 import { useCart } from "@/components/CartContext";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/components/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
-export default function Checkout() {
-    const { items, removeFromCart, totalCost, clearCart } = useCart();
-    const { data: session } = useSession();
+export default function CheckoutPage() {
+    const { items, totalCost, clearCart } = useCart();
+    const { user, loading: authLoading } = useAuth();
     const router = useRouter();
     const [balance, setBalance] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [fetchingBalance, setFetchingBalance] = useState(true);
     const [error, setError] = useState("");
-    const [success, setSuccess] = useState(false);
+    const [orderResult, setOrderResult] = useState<{
+        order_id: string;
+        items_purchased: number;
+        total_cost: number;
+        new_balance: number;
+        timestamp: string;
+    } | null>(null);
 
     useEffect(() => {
-        fetch("/api/wallet")
-            .then(res => res.json())
-            .then(data => setBalance(data.balance || 0))
-            .catch(console.error);
-    }, []);
+        if (!authLoading && !user) router.push("/auth");
+    }, [user, authLoading, router]);
 
-    const handleCheckout = async () => {
-        if (totalCost > balance) {
-            setError("Insufficient funds.");
-            return;
-        }
+    useEffect(() => {
+        if (!user) return;
+        const token = localStorage.getItem("gecb_token");
+        if (!token) return;
+        fetch("/api/wallet", { headers: { Authorization: `Bearer ${token}` } })
+            .then((res) => res.json())
+            .then((data) => setBalance(data.balance || 0))
+            .catch(console.error)
+            .finally(() => setFetchingBalance(false));
+    }, [user]);
 
+    const handlePlaceOrder = async () => {
+        if (items.length === 0 || totalCost > balance) return;
         setLoading(true);
         setError("");
 
         try {
-            // Sequentially redeem for MVP, or bulk API.
-            // Let's do sequential to reuse existing /api/redeem 
-            // OR create a bulk API. Sequential is easier for now but bulk is better.
-            // I'll update /api/redeem to assume bulk for efficiency if possible, 
-            // OR just loop here. Looping is easiest without changing backend validation logic too much.
+            const token = localStorage.getItem("gecb_token");
+            const res = await fetch("/api/checkout", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({
+                    items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
+                }),
+            });
 
-            // Loop through items (considering quantity)
-            for (const item of items) {
-                for (let i = 0; i < item.quantity; i++) {
-                    const res = await fetch("/api/redeem", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ rewardId: item.id })
-                    });
-                    if (!res.ok) {
-                        const j = await res.json();
-                        throw new Error(j.error || "Redemption failed");
-                    }
-                }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Checkout failed" }));
+                throw new Error(err.detail || "Checkout failed");
             }
 
-            setSuccess(true);
+            const data = await res.json();
+            setOrderResult(data);
             clearCart();
-            setTimeout(() => router.push("/marketplace"), 3000);
-
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Checkout failed");
         } finally {
             setLoading(false);
         }
     };
 
-    if (success) {
+    if (authLoading || fetchingBalance) {
+        return <div style={{ textAlign: "center", color: "var(--ink-soft)", padding: 64 }}>Loading...</div>;
+    }
+
+    if (orderResult) {
         return (
-            <div className="max-w-2xl mx-auto text-center p-12">
-                <h2 className="text-3xl font-bold text-green-600 mb-4">Redemption Successful!</h2>
-                <p>Your rewards have been claimed. Redirecting...</p>
+            <div style={{ maxWidth: 560, margin: "0 auto", display: "grid", gap: 16 }}>
+                <div
+                    className="surface-card"
+                    style={{ padding: 32, textAlign: "center" }}
+                >
+                    <div style={{ fontSize: 56, marginBottom: 12 }}>✅</div>
+                    <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "var(--positive)" }}>
+                        Order Placed!
+                    </h1>
+                    <p style={{ color: "var(--ink-muted)", margin: "8px 0 0" }}>Your redemption was successful.</p>
+                </div>
+
+                <div className="surface-card" style={{ padding: 22 }}>
+                    <h2 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 800, color: "var(--ink-secondary)" }}>
+                        Order Receipt
+                    </h2>
+                    <div style={{ display: "grid", gap: 10, fontSize: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "var(--ink-muted)" }}>
+                            <span>Order ID</span>
+                            <span style={{ fontWeight: 700, color: "var(--ink-secondary)", fontFamily: "monospace" }}>
+                                {orderResult.order_id}
+                            </span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "var(--ink-muted)" }}>
+                            <span>Items Purchased</span>
+                            <span style={{ fontWeight: 700, color: "var(--ink-secondary)" }}>{orderResult.items_purchased}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "var(--ink-muted)" }}>
+                            <span>Total Cost</span>
+                            <span style={{ fontWeight: 800, color: "var(--ink-secondary)" }}>{orderResult.total_cost} pts</span>
+                        </div>
+                        <div
+                            style={{
+                                borderTop: "1px solid var(--line-subtle)",
+                                paddingTop: 10,
+                                display: "flex",
+                                justifyContent: "space-between",
+                                color: "var(--ink-muted)",
+                            }}
+                        >
+                            <span>Remaining Balance</span>
+                            <span style={{ fontWeight: 800, color: "var(--positive)", fontSize: 16 }}>
+                                {orderResult.new_balance} pts
+                            </span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "var(--ink-muted)" }}>
+                            <span>Date</span>
+                            <span style={{ fontWeight: 600 }}>
+                                {new Date(orderResult.timestamp).toLocaleString()}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ marginTop: 24, display: "flex", gap: 12, justifyContent: "center" }}>
+                    <Link href="/marketplace" style={{ textDecoration: "none" }}>
+                        <button className="aurora-btn-secondary" style={{ padding: "10px 20px" }}>
+                            Continue Shopping
+                        </button>
+                    </Link>
+                    <button
+                        className="aurora-btn"
+                        style={{ padding: "10px 20px" }}
+                        onClick={() => {
+                            const token = localStorage.getItem("gecb_token");
+                            if (!token) return;
+                            fetch(`/api/marketplace/invoice/${orderResult.order_id}`, {
+                                headers: { Authorization: `Bearer ${token}` }
+                            })
+                                .then(res => res.blob())
+                                .then(blob => {
+                                    const url = window.URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `Invoice_${orderResult.order_id}.pdf`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    a.remove();
+                                })
+                                .catch(alert);
+                        }}
+                    >
+                        📄 Download Invoice
+                    </button>
+                </div>
+            </div >
+        );
+    }
+
+    // Empty cart
+    if (items.length === 0) {
+        return (
+            <div style={{ maxWidth: 560, margin: "0 auto" }}>
+                <div
+                    className="surface-card"
+                    style={{ padding: 48, textAlign: "center", display: "grid", gap: 12, placeItems: "center" }}
+                >
+                    <span style={{ fontSize: 48 }}>🛒</span>
+                    <p style={{ color: "var(--ink-muted)", fontSize: 16, margin: 0 }}>Your cart is empty</p>
+                    <Link
+                        href="/marketplace"
+                        className="primary-btn"
+                        style={{ textDecoration: "none", fontSize: 14, padding: "10px 20px" }}
+                    >
+                        Browse Marketplace
+                    </Link>
+                </div>
             </div>
         );
     }
 
+    const canAfford = balance >= totalCost;
+
     return (
-        <div className="max-w-3xl mx-auto">
-            <Link href="/marketplace" className="text-gray-500 hover:text-gray-800 flex items-center mb-6">
-                <ArrowLeft size={16} className="mr-1" /> Back to Marketplace
+        <div style={{ maxWidth: 700, margin: "0 auto", display: "grid", gap: 16 }}>
+            {/* Back */}
+            <Link href="/marketplace/cart" style={{ color: "var(--accent)", textDecoration: "none", fontSize: 13, fontWeight: 700 }}>
+                ← Back to Cart
             </Link>
 
-            <h1 className="text-3xl font-bold mb-8">Checkout</h1>
+            <h1 className="headline" style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Checkout</h1>
 
-            {items.length === 0 ? (
-                <p className="text-gray-500">Your cart is empty.</p>
-            ) : (
-                <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost</th>
-                                <th className="px-6 py-3"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {items.map(item => (
-                                <tr key={item.id}>
-                                    <td className="px-6 py-4">
-                                        <div className="font-bold">{item.title}</div>
-                                        <div className="text-sm text-gray-500">{item.description}</div>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">{item.quantity}</td>
-                                    <td className="px-6 py-4 text-right">{item.cost * item.quantity}</td>
-                                    <td className="px-6 py-4 text-right">
-                                        <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-700">
-                                            <Trash2 size={18} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                        <tfoot className="bg-gray-50">
-                            <tr>
-                                <td colSpan={2} className="px-6 py-4 font-bold text-right">Total</td>
-                                <td className="px-6 py-4 font-bold text-right text-green-700">{totalCost}</td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            )}
+            {/* Invoice */}
+            <div className="surface-card" style={{ padding: 22 }}>
+                <h2 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 800, color: "var(--ink-secondary)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>📄</span> Invoice
+                </h2>
 
-            {items.length > 0 && (
-                <div className="mt-8 flex flex-col items-end">
-                    <div className="text-right mb-4">
-                        <p className="text-gray-600">Current Balance: <span className="font-bold">{balance}</span></p>
-                        <p className={`text-sm ${balance >= totalCost ? 'text-green-600' : 'text-red-600'}`}>
-                            {balance >= totalCost ? 'Success: Sufficient funds' : 'Error: Insufficient funds'}
-                        </p>
+                {/* Line items */}
+                <div style={{ display: "grid", gap: 0 }}>
+                    {/* Header */}
+                    <div
+                        style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 60px 80px",
+                            padding: "8px 0",
+                            borderBottom: "1px solid var(--line)",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            color: "var(--ink-muted)",
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                        }}
+                    >
+                        <span>Item</span>
+                        <span style={{ textAlign: "center" }}>Qty</span>
+                        <span style={{ textAlign: "right" }}>Subtotal</span>
                     </div>
 
-                    {error && <p className="text-red-600 mb-4">{error}</p>}
-
-                    <button
-                        onClick={handleCheckout}
-                        disabled={loading || balance < totalCost}
-                        className="bg-green-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {loading ? "Processing..." : "Confirm Redemption"}
-                    </button>
+                    {items.map((item) => (
+                        <div
+                            key={item.id}
+                            style={{
+                                display: "grid",
+                                gridTemplateColumns: "1fr 60px 80px",
+                                padding: "10px 0",
+                                borderBottom: "1px solid var(--line-subtle)",
+                                fontSize: 14,
+                                alignItems: "center",
+                            }}
+                        >
+                            <div>
+                                <div style={{ fontWeight: 700, color: "var(--ink)" }}>{item.title}</div>
+                                <div style={{ fontSize: 12, color: "var(--ink-muted)" }}>{item.cost} pts each · {item.brand || "Marketplace"}</div>
+                            </div>
+                            <span style={{ textAlign: "center", fontWeight: 700, color: "var(--ink-secondary)" }}>{item.quantity}</span>
+                            <span style={{ textAlign: "right", fontWeight: 800, color: "var(--ink-secondary)" }}>{item.cost * item.quantity} pts</span>
+                        </div>
+                    ))}
                 </div>
-            )}
+
+                {/* Total */}
+                <div
+                    style={{
+                        marginTop: 14,
+                        paddingTop: 14,
+                        borderTop: "2px solid var(--line-strong)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                    }}
+                >
+                    <span style={{ fontSize: 18, fontWeight: 800, color: "var(--ink)" }}>Total</span>
+                    <span style={{ fontSize: 22, fontWeight: 900, color: "var(--ink)" }}>{totalCost} pts</span>
+                </div>
+            </div>
+
+            {/* Balance + Place Order */}
+            <div className="surface-card" style={{ padding: 22 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <span style={{ color: "var(--ink-muted)", fontSize: 14 }}>Your Balance</span>
+                    <span style={{ fontWeight: 800, fontSize: 20, color: canAfford ? "var(--positive)" : "var(--negative)" }}>
+                        {balance} pts
+                    </span>
+                </div>
+
+                {!canAfford && (
+                    <div
+                        style={{
+                            background: "var(--negative-bg)",
+                            border: "1px solid var(--error-border)",
+                            borderRadius: 10,
+                            padding: "10px 14px",
+                            color: "var(--negative)",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            marginBottom: 14,
+                        }}
+                    >
+                        Insufficient balance. You need {totalCost - balance} more points.
+                    </div>
+                )}
+
+                {error && (
+                    <div
+                        style={{
+                            background: "var(--error-bg)",
+                            border: "1px solid var(--error-border)",
+                            borderRadius: 10,
+                            padding: "10px 14px",
+                            color: "var(--error-text)",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            marginBottom: 14,
+                        }}
+                    >
+                        {error}
+                    </div>
+                )}
+
+                <button
+                    onClick={handlePlaceOrder}
+                    disabled={loading || !canAfford}
+                    className="primary-btn"
+                    style={{
+                        width: "100%",
+                        padding: "14px 24px",
+                        fontSize: 16,
+                    }}
+                >
+                    {loading ? "Processing Order..." : `Place Order · ${totalCost} pts`}
+                </button>
+            </div>
         </div>
     );
 }

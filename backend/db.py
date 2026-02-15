@@ -52,14 +52,43 @@ def _try_actian():
 
 _try_actian()
 
+# ── Caching (Write-through) ──────────────────────────────
+CACHE_FILE = os.path.join(os.path.dirname(__file__), 'db_cache.json')
+
+_email_id_cache: dict[str, int] = {}
+_receipt_id_cache: dict[str, int] = {}
+_tx_email_cache: dict[str, list[int]] = {} # email -> list of tx_ids
+
+def _load_cache():
+    global _email_id_cache, _receipt_id_cache, _tx_email_cache
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, 'r') as f:
+                data = json.load(f)
+                _email_id_cache = data.get("email_id", {})
+                _receipt_id_cache = data.get("receipt_id", {})
+                _tx_email_cache = data.get("tx_email", {})
+            print(f"[db] Loaded cache: {len(_email_id_cache)} users, {len(_receipt_id_cache)} receipts")
+        except Exception as e:
+            print(f"[db] Failed to load cache: {e}")
+
+def _save_cache():
+    try:
+        with open(CACHE_FILE, 'w') as f:
+            json.dump({
+                "email_id": _email_id_cache,
+                "receipt_id": _receipt_id_cache,
+                "tx_email": _tx_email_cache
+            }, f)
+    except Exception as e:
+        print(f"[db] Failed to save cache: {e}")
+
+# Load immediately
+_load_cache()
+
 # ── In-memory store (Fallback only) ───────────────────────
 
 _mem: dict[str, dict[int, dict]] = {}
-
-# ── Write-Through Cache for Consistency (Email -> ID) ──────
-# Solves Actian scroll eventual consistency
-_email_id_cache: dict[str, int] = {}
-_receipt_id_cache: dict[str, int] = {}
 
 def _mem_ensure(col: str):
     if col not in _mem:
@@ -116,12 +145,29 @@ def put(collection: str, record_id: int, payload: dict):
                 
                 if collection == "claims" and payload.get("receiptNumber"):
                     _receipt_id_cache[payload["receiptNumber"]] = record_id
+
+                # Cache transaction IDs per email
+                if collection == "transactions" and payload.get("email"):
+                    email = payload["email"]
+                    if email not in _tx_email_cache:
+                        _tx_email_cache[email] = []
+                    _tx_email_cache[email].append(record_id)
+                
+                _save_cache()
+
             except Exception as e:
                 print(f"[db] ERROR put: {e}")
                 raise e
     else:
         _mem_ensure(collection)
         _mem[collection][record_id] = copy.deepcopy(payload)
+        # Also cache for in-memory
+        if collection == "transactions" and payload.get("email"):
+            email = payload["email"]
+            if email not in _tx_email_cache:
+                _tx_email_cache[email] = []
+            if record_id not in _tx_email_cache[email]:
+                _tx_email_cache[email].append(record_id)
 
 def get_by_id(collection: str, record_id: int) -> Optional[dict]:
     if _USE_ACTIAN:
@@ -153,10 +199,20 @@ def get_all(collection: str, limit: int = 1000) -> List[dict]:
         _mem_ensure(collection)
         return [{"_id": rid, **copy.deepcopy(data)} for rid, data in list(_mem[collection].items())[:limit]]
 
+def get_transactions_by_email(email: str) -> List[dict]:
+    """Retrieve transactions for a specific email using the write-through cache."""
+    tx_ids = _tx_email_cache.get(email, [])
+    results = []
+    for tid in tx_ids:
+        tx = get_by_id("transactions", tid)
+        if tx:
+            results.append(tx)
+    return results
+
 def find_by(collection: str, field: str, value, limit: int = 100) -> List[dict]:
     # In a real vector DB we'd filter, but Cortex might not support strict field filtering in scroll yet
     # so we fetch and filter in app for this hackathon scale
-    all_items = get_all(collection, limit=1000)
+    all_items = get_all(collection, limit=10000)
     return [r for r in all_items if r.get(field) == value][:limit]
 
 def find_one(collection: str, field: str, value) -> Optional[dict]:
@@ -226,58 +282,58 @@ def health_info() -> dict:
 
 MARKETPLACE_SOURCE = {
     "offers": [
-        {"product_name": "Sonic The Hedgehog 3", "brand": "SEGA", "price": "$59.99", "image_url": "https://m.media-amazon.com/images/I/51rnJbc9CrL.SX300_SY300_QL70_FMwebp.jpg"},
-        {"product_name": "Onyx Storm (The Empyrean Book 3)", "brand": "Entangled", "price": "$19.99", "image_url": "https://m.media-amazon.com/images/I/51erLQfWU8L.SY445_SX342.jpg"},
-        {"product_name": "Amazon Fire TV Stick 4K", "brand": "Amazon", "price": "$49.99", "image_url": "https://m.media-amazon.com/images/I/51glskD21nL.AC_US40.jpg"},
-        {"product_name": "Samsung 50\" Crystal UHD TV", "brand": "Samsung", "price": "$379.99", "image_url": "https://m.media-amazon.com/images/I/51R4iScDJqL.AC_US40.jpg"},
-        {"product_name": "Dyson V8 Vacuum", "brand": "Dyson", "price": "$349.00", "image_url": "https://m.media-amazon.com/images/I/31Mll1htAXL.AC_US40.jpg"},
-        {"product_name": "Echo Buds Replacement Covers", "brand": "Amazon", "price": "$9.99", "image_url": "https://m.media-amazon.com/images/I/61KOZAbCkML.AC_SY300_SX300.jpg"},
-        {"product_name": "Owala FreeSip Water Bottle", "brand": "Owala", "price": "$27.99", "image_url": "https://m.media-amazon.com/images/I/31jQEUMGhCL.AC_US100.jpg"},
-        {"product_name": "Stanley Beer Pint Glass", "brand": "Stanley", "price": "$20.00", "image_url": "https://m.media-amazon.com/images/I/41Tq9lOLJeL.AC_US40.jpg"},
-        {"product_name": "Fender Bass Guitar Package", "brand": "Fender", "price": "$229.99", "image_url": "https://m.media-amazon.com/images/I/41PlIjT0qcL.AC_US40.jpg"},
-        {"product_name": "Donald Trump Coin", "brand": "Collectible", "price": "$12.99", "image_url": "https://m.media-amazon.com/images/I/818iy-vmELL.AC_SX300_SY300_QL70_FMwebp_.jpg"},
-        {"product_name": "Saker Mini Chainsaw", "brand": "Saker", "price": "$45.99", "image_url": "https://m.media-amazon.com/images/I/51Xcfs+w8TL.AC_US100.jpg"},
-        {"product_name": "Smart Mobile Homes", "brand": "Generic", "price": "$15000.00", "image_url": "https://m.media-amazon.com/images/I/513VJC9cpBL.AC_US100.jpg"},
-        {"product_name": "Asmuse Banjo 5 String", "brand": "Asmuse", "price": "$159.00", "image_url": "https://m.media-amazon.com/images/I/51GI0vXQbxL.AC_US40.jpg"},
-        {"product_name": "CreoleFeast Propane Fryer", "brand": "CreoleFeast", "price": "$129.99", "image_url": "https://m.media-amazon.com/images/I/51z+QvLeMhL.AC_US100.jpg"},
-        {"product_name": "Spirited Away Steelbook", "brand": "Studio Ghibli", "price": "$24.99", "image_url": "https://m.media-amazon.com/images/I/41rgFiYz6bL.SX300_SY300_QL70_FMwebp.jpg"},
-        {"product_name": "The Hunger Games DVD", "brand": "Lionsgate", "price": "$9.99", "image_url": "https://m.media-amazon.com/images/I/51awED+QlZL.SY300.jpg"},
-        {"product_name": "USAOPOLY TAPPLE Word Game", "brand": "USAOPOLY", "price": "$19.99", "image_url": "https://m.media-amazon.com/images/I/41dKkKzhf9L.AC_US40.jpg"},
-        {"product_name": "Harry Potter Sorcerer's Stone", "brand": "Scholastic", "price": "$12.50", "image_url": "https://m.media-amazon.com/images/I/51Ppi-8kISL.SY445_SX342.jpg"},
-        {"product_name": "Instant Print Camera for Kids", "brand": "Generic", "price": "$39.99", "image_url": "https://m.media-amazon.com/images/I/51cn+wauaOL.AC_US40.jpg"},
-        {"product_name": "Behave (Robert Sapolsky)", "brand": "Penguin", "price": "$18.00", "image_url": "https://m.media-amazon.com/images/I/41m+taHRzuL.SY445_SX342.jpg"},
-        {"product_name": "Ha-Seong Kim Autographed Ball", "brand": "MLB", "price": "$89.99", "image_url": "https://m.media-amazon.com/images/I/814ngfCiWbL.AC_SY300_SY300_QL70_FMwebp_.jpg"},
-        {"product_name": "Alpha Grillers Meat Thermometer", "brand": "Alpha Grillers", "price": "$16.99", "image_url": "https://m.media-amazon.com/images/I/512O9dEwcWL.AC_US100.jpg"},
+        {"product_name": "Sonic The Hedgehog 3", "brand": "SEGA", "price": "$59.99", "image_url": "https://m.media-amazon.com/images/I/51rnJbc9CrL.jpg"},
+        {"product_name": "Onyx Storm (The Empyrean Book 3)", "brand": "Entangled", "price": "$19.99", "image_url": "https://m.media-amazon.com/images/I/51erLQfWU8L.jpg"},
+        {"product_name": "Amazon Fire TV Stick 4K", "brand": "Amazon", "price": "$49.99", "image_url": "https://m.media-amazon.com/images/I/51glskD21nL.jpg"},
+        {"product_name": "Samsung 50\" Crystal UHD TV", "brand": "Samsung", "price": "$379.99", "image_url": "https://m.media-amazon.com/images/I/51R4iScDJqL.jpg"},
+        {"product_name": "Dyson V8 Vacuum", "brand": "Dyson", "price": "$349.00", "image_url": "https://m.media-amazon.com/images/I/31Mll1htAXL.jpg"},
+        {"product_name": "Echo Buds Replacement Covers", "brand": "Amazon", "price": "$9.99", "image_url": "https://m.media-amazon.com/images/I/61KOZAbCkML.jpg"},
+        {"product_name": "Owala FreeSip Water Bottle", "brand": "Owala", "price": "$27.99", "image_url": "https://m.media-amazon.com/images/I/31jQEUMGhCL.jpg"},
+        {"product_name": "Stanley Beer Pint Glass", "brand": "Stanley", "price": "$20.00", "image_url": "https://m.media-amazon.com/images/I/41Tq9lOLJeL.jpg"},
+        {"product_name": "Fender Bass Guitar Package", "brand": "Fender", "price": "$229.99", "image_url": "https://m.media-amazon.com/images/I/41PlIjT0qcL.jpg"},
+        {"product_name": "Donald Trump Coin", "brand": "Collectible", "price": "$12.99", "image_url": "https://m.media-amazon.com/images/I/818iy-vmELL.jpg"},
+        {"product_name": "Saker Mini Chainsaw", "brand": "Saker", "price": "$45.99", "image_url": "https://m.media-amazon.com/images/I/51Xcfs+w8TL.jpg"},
+        {"product_name": "Smart Mobile Homes", "brand": "Generic", "price": "$15000.00", "image_url": "https://m.media-amazon.com/images/I/513VJC9cpBL.jpg"},
+        {"product_name": "Asmuse Banjo 5 String", "brand": "Asmuse", "price": "$159.00", "image_url": "https://m.media-amazon.com/images/I/51GI0vXQbxL.jpg"},
+        {"product_name": "CreoleFeast Propane Fryer", "brand": "CreoleFeast", "price": "$129.99", "image_url": "https://m.media-amazon.com/images/I/51z+QvLeMhL.jpg"},
+        {"product_name": "Spirited Away Steelbook", "brand": "Studio Ghibli", "price": "$24.99", "image_url": "https://m.media-amazon.com/images/I/41rgFiYz6bL.jpg"},
+        {"product_name": "The Hunger Games DVD", "brand": "Lionsgate", "price": "$9.99", "image_url": "https://m.media-amazon.com/images/I/51awED+QlZL.jpg"},
+        {"product_name": "USAOPOLY TAPPLE Word Game", "brand": "USAOPOLY", "price": "$19.99", "image_url": "https://m.media-amazon.com/images/I/41dKkKzhf9L.jpg"},
+        {"product_name": "Harry Potter Sorcerer's Stone", "brand": "Scholastic", "price": "$12.50", "image_url": "https://m.media-amazon.com/images/I/51Ppi-8kISL.jpg"},
+        {"product_name": "Instant Print Camera for Kids", "brand": "Generic", "price": "$39.99", "image_url": "https://m.media-amazon.com/images/I/51cn+wauaOL.jpg"},
+        {"product_name": "Behave (Robert Sapolsky)", "brand": "Penguin", "price": "$18.00", "image_url": "https://m.media-amazon.com/images/I/41m+taHRzuL.jpg"},
+        {"product_name": "Ha-Seong Kim Autographed Ball", "brand": "MLB", "price": "$89.99", "image_url": "https://m.media-amazon.com/images/I/814ngfCiWbL.jpg"},
+        {"product_name": "Alpha Grillers Meat Thermometer", "brand": "Alpha Grillers", "price": "$16.99", "image_url": "https://m.media-amazon.com/images/I/512O9dEwcWL.jpg"},
         {"product_name": "Amazon Business Amex Card", "brand": "Amex", "price": "$0.00", "image_url": "https://m.media-amazon.com/images/G/01/AmazonBusinessPayments/SBCC/DP/SBCC_US_DualCards.png"},
-        {"product_name": "Owala FreeSip Water Bottle", "brand": "Owala", "price": "$27.99", "image_url": "https://m.media-amazon.com/images/I/31jQEUMGhCL.AC_US100.jpg"},
+        {"product_name": "Owala FreeSip Water Bottle", "brand": "Owala", "price": "$27.99", "image_url": "https://m.media-amazon.com/images/I/31jQEUMGhCL.jpg"},
         {"product_name": "Blink Plus", "brand": "Blink", "price": "$10.00", "image_url": "https://m.media-amazon.com/images/G/01/B08JHCVHTY/correct.png"},
     ],
     "products": [
-        {"product_name": "Amazon Basics Dog Pee Pads", "brand": "Amazon Basics", "price": "$15.99", "image_url": "https://m.media-amazon.com/images/I/51YxZi7vGDL.AC_US40.jpg"},
-        {"product_name": "Amazon Basics Copy Paper", "brand": "Amazon Basics", "price": "$9.99", "image_url": "https://m.media-amazon.com/images/I/21aO-njfR+L.AC_US40.jpg"},
-        {"product_name": "MedPride Nitrile Gloves", "brand": "MedPride", "price": "$12.50", "image_url": "https://m.media-amazon.com/images/I/41xqIEtBfrS.AC_US40.jpg"},
-        {"product_name": "Kinsa Smart Thermometer", "brand": "Kinsa", "price": "$24.99", "image_url": "https://m.media-amazon.com/images/I/41ryt9CsQ8L.AC_US40.jpg"},
-        {"product_name": "Ernie Ball Guitar Strings", "brand": "Ernie Ball", "price": "$6.99", "image_url": "https://m.media-amazon.com/images/I/81Cz93WGTaL.AC_SX300_SY300_QL70_FMwebp_.jpg"},
-        {"product_name": "Beef Tallow For Skin", "brand": "Generic", "price": "$18.00", "image_url": "https://m.media-amazon.com/images/I/513SjixzqQL.SS40.jpg"},
-        {"product_name": "Guns (Kindle Single)", "brand": "Kindle", "price": "$1.99", "image_url": "https://m.media-amazon.com/images/I/3167D-lfywL.SY445_SX342.jpg"},
-        {"product_name": "Gerber Baby Onesies", "brand": "Gerber", "price": "$14.00", "image_url": "https://m.media-amazon.com/images/I/418K1iNJhlL.AC_SR38,50.jpg"},
-        {"product_name": "Chicken Diapers", "brand": "Generic", "price": "$11.99", "image_url": "https://m.media-amazon.com/images/I/410R5D+f84L.AC_US40.jpg"},
-        {"product_name": "Lizards Clothes for Bearded Dragon", "brand": "Generic", "price": "$8.50", "image_url": "https://m.media-amazon.com/images/I/51482YAedyL.AC_US40.jpg"},
-        {"product_name": "Bearded Dragon Travel Backpack", "brand": "Generic", "price": "$22.00", "image_url": "https://m.media-amazon.com/images/I/51Eg+I5h3-L.AC_US40.jpg"},
-        {"product_name": "Queenmore Small Dog Sweaters", "brand": "Queenmore", "price": "$13.99", "image_url": "https://m.media-amazon.com/images/I/4118uKRUkNL.AC_US40.jpg"},
-        {"product_name": "Artificial Grass Potty Mat", "brand": "Generic", "price": "$25.99", "image_url": "https://m.media-amazon.com/images/I/51dF+1C1idL.AC_US100.jpg"},
-        {"product_name": "Yosemite Address Light", "brand": "Yosemite", "price": "$35.00", "image_url": "https://m.media-amazon.com/images/I/41F0dNk9FrL.AC_US100.jpg"},
-        {"product_name": "Midwest Hearth Valve Key", "brand": "Midwest Hearth", "price": "$14.99", "image_url": "https://m.media-amazon.com/images/I/31AHo6iH6FL.AC_US100.jpg"},
-        {"product_name": "American Fireglass Lava Rock", "brand": "American Fireglass", "price": "$19.50", "image_url": "https://m.media-amazon.com/images/I/51SHiV-gokL.AC_US100.jpg"},
-        {"product_name": "Pride and Prejudice Kindle", "brand": "Kindle", "price": "$0.00", "image_url": "https://m.media-amazon.com/images/I/51jSMPqBXxL.SY445_SX342.jpg"},
-        {"product_name": "Pellets Barn Owl Pellet", "brand": "Generic", "price": "$9.00", "image_url": "https://m.media-amazon.com/images/I/41zzkO2a04L.SX38_SY50_CR,0,0,38,50.jpg"},
-        {"product_name": "Starbond CA Glue Accelerator", "brand": "Starbond", "price": "$15.99", "image_url": "https://m.media-amazon.com/images/I/51DVKNV8V5L.SX38_SY50_CR,0,0,38,50.jpg"},
-        {"product_name": "Blingstar L Bracket", "brand": "Blingstar", "price": "$11.00", "image_url": "https://m.media-amazon.com/images/I/51szdDkwBEL.AC_US100.jpg"},
-        {"product_name": "Plastic Hole Plugs", "brand": "Generic", "price": "$7.99", "image_url": "https://m.media-amazon.com/images/I/51fMljSiRYL.AC_US100.jpg"},
-        {"product_name": "U Brands Bulletin Board", "brand": "U Brands", "price": "$16.00", "image_url": "https://m.media-amazon.com/images/I/31j6W9BynZL.AC_US40.jpg"},
-        {"product_name": "MATEIN Cable Organizer Bag", "brand": "MATEIN", "price": "$15.99", "image_url": "https://m.media-amazon.com/images/I/51+-HSpCovL.AC_US40.jpg"},
-        {"product_name": "How To Train Your Dragon Storybook", "brand": "Storybook", "price": "$6.99", "image_url": "https://m.media-amazon.com/images/I/81aq4IxenbL.SL500.png"},
-        {"product_name": "Ethernet Adapter for Fire TV", "brand": "Amazon", "price": "$14.99", "image_url": "https://m.media-amazon.com/images/I/41Dmsxz0qDL.AC_US40.jpg"},
+        {"product_name": "Amazon Basics Dog Pee Pads", "brand": "Amazon Basics", "price": "$15.99", "image_url": "https://m.media-amazon.com/images/I/51YxZi7vGDL.jpg"},
+        {"product_name": "Amazon Basics Copy Paper", "brand": "Amazon Basics", "price": "$9.99", "image_url": "https://m.media-amazon.com/images/I/21aO-njfR+L.jpg"},
+        {"product_name": "MedPride Nitrile Gloves", "brand": "MedPride", "price": "$12.50", "image_url": "https://m.media-amazon.com/images/I/41xqIEtBfrS.jpg"},
+        {"product_name": "Kinsa Smart Thermometer", "brand": "Kinsa", "price": "$24.99", "image_url": "https://m.media-amazon.com/images/I/41ryt9CsQ8L.jpg"},
+        {"product_name": "Ernie Ball Guitar Strings", "brand": "Ernie Ball", "price": "$6.99", "image_url": "https://m.media-amazon.com/images/I/81Cz93WGTaL.jpg"},
+        {"product_name": "Beef Tallow For Skin", "brand": "Generic", "price": "$18.00", "image_url": "https://m.media-amazon.com/images/I/513SjixzqQL.jpg"},
+        {"product_name": "Guns (Kindle Single)", "brand": "Kindle", "price": "$1.99", "image_url": "https://m.media-amazon.com/images/I/3167D-lfywL.jpg"},
+        {"product_name": "Gerber Baby Onesies", "brand": "Gerber", "price": "$14.00", "image_url": "https://m.media-amazon.com/images/I/418K1iNJhlL.jpg"},
+        {"product_name": "Chicken Diapers", "brand": "Generic", "price": "$11.99", "image_url": "https://m.media-amazon.com/images/I/410R5D+f84L.jpg"},
+        {"product_name": "Lizards Clothes for Bearded Dragon", "brand": "Generic", "price": "$8.50", "image_url": "https://m.media-amazon.com/images/I/51482YAedyL.jpg"},
+        {"product_name": "Bearded Dragon Travel Backpack", "brand": "Generic", "price": "$22.00", "image_url": "https://m.media-amazon.com/images/I/51Eg+I5h3-L.jpg"},
+        {"product_name": "Queenmore Small Dog Sweaters", "brand": "Queenmore", "price": "$13.99", "image_url": "https://m.media-amazon.com/images/I/4118uKRUkNL.jpg"},
+        {"product_name": "Artificial Grass Potty Mat", "brand": "Generic", "price": "$25.99", "image_url": "https://m.media-amazon.com/images/I/51dF+1C1idL.jpg"},
+        {"product_name": "Yosemite Address Light", "brand": "Yosemite", "price": "$35.00", "image_url": "https://m.media-amazon.com/images/I/41F0dNk9FrL.jpg"},
+        {"product_name": "Midwest Hearth Valve Key", "brand": "Midwest Hearth", "price": "$14.99", "image_url": "https://m.media-amazon.com/images/I/31AHo6iH6FL.jpg"},
+        {"product_name": "American Fireglass Lava Rock", "brand": "American Fireglass", "price": "$19.50", "image_url": "https://m.media-amazon.com/images/I/51SHiV-gokL.jpg"},
+        {"product_name": "Pride and Prejudice Kindle", "brand": "Kindle", "price": "$0.00", "image_url": "https://m.media-amazon.com/images/I/51jSMPqBXxL.jpg"},
+        {"product_name": "Pellets Barn Owl Pellet", "brand": "Generic", "price": "$9.00", "image_url": "https://m.media-amazon.com/images/I/41zzkO2a04L.jpg"},
+        {"product_name": "Starbond CA Glue Accelerator", "brand": "Starbond", "price": "$15.99", "image_url": "https://m.media-amazon.com/images/I/51DVKNV8V5L.jpg"},
+        {"product_name": "Blingstar L Bracket", "brand": "Blingstar", "price": "$11.00", "image_url": "https://m.media-amazon.com/images/I/51szdDkwBEL.jpg"},
+        {"product_name": "Plastic Hole Plugs", "brand": "Generic", "price": "$7.99", "image_url": "https://m.media-amazon.com/images/I/51fMljSiRYL.jpg"},
+        {"product_name": "U Brands Bulletin Board", "brand": "U Brands", "price": "$16.00", "image_url": "https://m.media-amazon.com/images/I/31j6W9BynZL.jpg"},
+        {"product_name": "MATEIN Cable Organizer Bag", "brand": "MATEIN", "price": "$15.99", "image_url": "https://m.media-amazon.com/images/I/51+-HSpCovL.jpg"},
+        {"product_name": "How To Train Your Dragon Storybook", "brand": "Storybook", "price": "$6.99", "image_url": "https://m.media-amazon.com/images/I/81aq4IxenbL.png"},
+        {"product_name": "Ethernet Adapter for Fire TV", "brand": "Amazon", "price": "$14.99", "image_url": "https://m.media-amazon.com/images/I/41Dmsxz0qDL.jpg"},
     ],
 }
 

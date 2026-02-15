@@ -14,13 +14,13 @@ export default function KycPage() {
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
-    ssn: "1234",
-    dob: "1995-06-15",
-    address: "123 Green St",
-    city: "San Francisco",
-    state: "CA",
-    zip: "94102",
-    phone: "4151234567",
+    ssn: "",
+    dob: "",
+    address: "",
+    city: "",
+    state: "",
+    zip: "",
+    phone: "",
   });
 
   useEffect(() => {
@@ -53,41 +53,173 @@ export default function KycPage() {
     setLoading(false);
   };
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
   return (
-    <div style={{ maxWidth: 940, margin: "8px auto", display: "grid", gap: 14 }}>
+    <div style={{ maxWidth: 600, margin: "40px auto", display: "grid", gap: 24 }}>
       <OnboardingStepper currentStep={2} />
-      <section className="surface-card" style={{ padding: 24 }}>
-        <h2 style={{ color: "#065f46", marginTop: 0, marginBottom: 4 }}>🔐 Identity Verification (KYC)</h2>
-        <p style={{ color: "#6b7280", fontSize: 14, marginTop: 0 }}>
-          Powered by CRS FlexID — LexisNexis verification
-        </p>
+
+      <section className="glass-card">
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <h2 className="headline-gradient" style={{ margin: "0 0 8px", fontSize: 24 }}>Identity Verification</h2>
+          <p style={{ color: "var(--ink-secondary)", fontSize: 14, margin: 0 }}>
+            Securely powered by CRS FlexID & LexisNexis
+          </p>
+        </div>
 
         {result?.verified ? (
-          <div style={{ textAlign: "center", padding: 20 }}>
-            <div style={{ fontSize: 54 }}>✅</div>
-            <h3 style={{ color: "#059669", margin: "8px 0 4px" }}>Identity Verified</h3>
-            <p style={{ color: "#6b7280", margin: 0 }}>Redirecting to fraud check...</p>
+          <div style={{ textAlign: "center", padding: "40px 20px" }}>
+            <div style={{
+              width: 80, height: 80,
+              background: "var(--positive-bg)",
+              color: "var(--positive)",
+              borderRadius: "50%",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 40, margin: "0 auto 20px"
+            }}>
+              ✅
+            </div>
+            <h3 style={{ color: "var(--ink)", margin: "0 0 8px", fontSize: 22 }}>Verified Successfully</h3>
+            <p style={{ color: "var(--ink-secondary)", margin: 0 }}>Redirecting you to fraud check...</p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              {Object.entries(form).map(([key, val]) => (
-                <label key={key} style={{ display: "grid", gap: 6 }}>
-                  <span className="field-label">
-                    {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
-                  </span>
-                  <input
-                    value={val}
-                    onChange={(e) => setForm((entry) => ({ ...entry, [key]: e.target.value }))}
-                    required
-                    className="field-input"
-                  />
-                </label>
-              ))}
+          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {/* First Name */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">FIRST NAME</span>
+                <input
+                  name="firstName"
+                  value={form.firstName}
+                  onChange={handleChange}
+                  required
+                  className="aurora-input"
+                  placeholder="First Name"
+                />
+              </label>
+
+              {/* Last Name */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">LAST NAME</span>
+                <input
+                  name="lastName"
+                  value={form.lastName}
+                  onChange={handleChange}
+                  required
+                  className="aurora-input"
+                  placeholder="Last Name"
+                />
+              </label>
+
+              {/* SSN - Custom Label */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">LAST 4 DIGITS OF SSN</span>
+                <input
+                  name="ssn"
+                  value={form.ssn}
+                  onChange={handleChange}
+                  required
+                  maxLength={4}
+                  className="aurora-input"
+                  placeholder="e.g. 1234"
+                />
+              </label>
+
+              {/* DOB - Date Input */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">DATE OF BIRTH</span>
+                <input
+                  type="date"
+                  name="dob"
+                  value={form.dob}
+                  onChange={handleChange}
+                  required
+                  className="aurora-input"
+                />
+              </label>
+
+              {/* Address - Full Width */}
+              <label style={{ display: "grid", gap: 6, gridColumn: "span 2" }}>
+                <span className="label-text">ADDRESS</span>
+                <input
+                  name="address"
+                  value={form.address}
+                  onChange={handleChange}
+                  required
+                  className="aurora-input"
+                  placeholder="Street Address"
+                />
+              </label>
+
+              {/* City */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">CITY</span>
+                <input
+                  name="city"
+                  value={form.city}
+                  onChange={handleChange}
+                  required
+                  className="aurora-input"
+                  placeholder="City"
+                />
+              </label>
+
+              {/* State */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">STATE</span>
+                <input
+                  name="state"
+                  value={form.state}
+                  onChange={handleChange}
+                  required
+                  className="aurora-input"
+                  placeholder="State"
+                />
+              </label>
+
+              {/* Zip */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">ZIP CODE</span>
+                <input
+                  name="zip"
+                  value={form.zip}
+                  onChange={handleChange}
+                  required
+                  className="aurora-input"
+                  placeholder="Zip Code"
+                />
+              </label>
+
+              {/* Phone */}
+              <label style={{ display: "grid", gap: 6 }}>
+                <span className="label-text">PHONE</span>
+                <input
+                  name="phone"
+                  value={form.phone}
+                  onChange={handleChange}
+                  required
+                  type="tel"
+                  className="aurora-input"
+                  placeholder="Phone Number"
+                />
+              </label>
             </div>
-            <button type="submit" disabled={loading} className="primary-btn" style={{ width: "100%", marginTop: 8 }}>
-              {loading ? "Verifying..." : "Verify Identity"}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="aurora-btn"
+              style={{ width: "100%", marginTop: 12, fontSize: 16 }}
+            >
+              {loading ? (
+                <span className="spinner" style={{ marginRight: 8 }} />
+              ) : "🔒 Verify Identity"}
             </button>
+            <p style={{ textAlign: "center", fontSize: 12, color: "var(--ink-muted)", margin: "12px 0 0" }}>
+              Your data is encrypted and never shared without consent.
+            </p>
           </form>
         )}
       </section>

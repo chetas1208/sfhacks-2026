@@ -48,6 +48,15 @@ export async function apiPost(path: string, body?: unknown) {
     return res.json();
 }
 
+export async function apiPut(path: string, body?: unknown) {
+    const res = await fetch(path, { method: "PUT", headers: authHeaders(), body: body ? JSON.stringify(body) : undefined });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || `PUT ${path} failed: ${res.status}`);
+    }
+    return res.json();
+}
+
 export async function apiUpload(path: string, file: File) {
     const fd = new FormData();
     fd.append("file", file);

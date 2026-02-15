@@ -1,221 +1,312 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthContext";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { apiGet, apiPut } from "@/lib/api";
+import GreenScoreGauge from "@/components/GreenScoreGauge";
 
 type ProfileData = {
-  balance?: number;
-  user?: {
-    name?: string;
-    email?: string;
-    greenScore?: number | null;
-    kycComplete?: boolean;
-    fraudClear?: boolean;
-  };
-  transactions?: Array<{
+  user: Record<string, unknown>;
+  balance: number;
+  transactions: {
     type?: string;
     amount?: number;
     description?: string;
     memo?: string;
     timestamp?: string;
     date?: string;
-  }>;
+  }[];
 };
 
 export default function ProfilePage() {
-  const { user, logout, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refreshUser } = useAuth();
   const router = useRouter();
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+
+  // Editable fields
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [editState, setEditState] = useState("");
+  const [editZip, setEditZip] = useState("");
 
   useEffect(() => {
-    if (!authLoading && !user) router.push("/auth");
+    if (authLoading) return;
+    if (!user) return void router.push("/auth");
+    (async () => {
+      try {
+        const data = await apiGet("/api/profile");
+        setProfile(data);
+        const u = data.user || {};
+        setEditName(u.name || "");
+        setEditPhone(u.phone || "");
+        setEditAddress(u.address || "");
+        setEditCity(u.city || "");
+        setEditState(u.state || "");
+        setEditZip(u.zip || "");
+      } catch (err) {
+        console.error(err);
+      }
+    })();
   }, [user, authLoading, router]);
 
-  useEffect(() => {
-    if (user) {
-      fetchProfile();
-    }
-  }, [user]);
-
-  const fetchProfile = async () => {
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveMsg("");
     try {
-      const token = localStorage.getItem("gecb_token");
-      const res = await fetch("/api/profile", {
-        headers: { Authorization: `Bearer ${token}` },
+      await apiPut("/api/profile", {
+        name: editName || undefined,
+        phone: editPhone || undefined,
+        address: editAddress || undefined,
+        city: editCity || undefined,
+        state: editState || undefined,
+        zip: editZip || undefined,
       });
-      if (res.ok) {
-        const data = await res.json();
-        setProfileData(data);
-      }
-    } catch (error) {
-      console.error(error);
+      await refreshUser();
+      // Refresh profile data
+      const data = await apiGet("/api/profile");
+      setProfile(data);
+      setSaveMsg("Profile updated!");
+      setEditing(false);
+    } catch (err: unknown) {
+      setSaveMsg(err instanceof Error ? err.message : "Update failed");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  if (authLoading || loading) {
-    return <div style={{ textAlign: "center", color: "#6f8d85", padding: 72 }}>Loading profile...</div>;
+  if (authLoading || !user) {
+    return <div style={{ textAlign: "center", padding: 72, color: "var(--ink-soft)" }}>Loading profile...</div>;
   }
 
-  if (!profileData) return null;
+  const u = profile?.user || {};
+  const greenScore = (u.greenScore as number) || user.greenScore || 600;
+  const transactions = profile?.transactions || [];
 
-  const score = profileData.user?.greenScore ?? null;
-  const scoreProgress = score ? Math.min((score / 850) * 100, 100) : 0;
-  const txs = profileData.transactions || [];
-  const statusPill = (ok: boolean | undefined, okLabel: string, badLabel: string) => (
-    <span
-      style={{
-        borderRadius: 999,
-        padding: "4px 10px",
-        fontSize: 11,
-        fontWeight: 800,
-        border: ok ? "1px solid rgba(16,185,129,0.32)" : "1px solid rgba(245,158,11,0.35)",
-        background: ok ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)",
-        color: ok ? "#0f8a69" : "#ad7a04",
-      }}
-    >
-      {ok ? okLabel : badLabel}
-    </span>
-  );
+  const downloadStatement = async () => {
+    setDownloading(true);
+    try {
+      // Correct key from AuthContext
+      const token = localStorage.getItem("gecb_token");
+      if (!token) throw new Error("No token found");
+      const res = await fetch("/api/profile/statement", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to download");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "Greenify_Statement.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Could not download statement. Is the backend running?");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const fieldStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "120px 1fr",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 0",
+  };
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <section
-        className="surface-card"
-        style={{
-          padding: 22,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12,
-          background:
-            "linear-gradient(130deg, rgba(255,255,255,0.88), rgba(227,249,241,0.78), rgba(223,242,255,0.72))",
-        }}
-      >
-        <div>
-          <h1 className="headline" style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>
-            My Profile
-          </h1>
-          <p className="hero-subtext">
-            {profileData.user?.name || "User"} • {profileData.user?.email || "No email found"}
-          </p>
+    <div style={{ display: "grid", gap: 24, maxWidth: 1000, margin: "20px auto" }}>
+      {/* Header */}
+      <section className="glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{
+            width: 64, height: 64,
+            borderRadius: "50%",
+            background: "var(--accent-gradient)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 28, color: "white", boxShadow: "0 8px 20px rgba(0,0,0,0.1)"
+          }}>
+            {(u.name as string)?.charAt(0) || "U"}
+          </div>
+          <div>
+            <h1 className="headline-gradient" style={{ margin: 0, fontSize: 32, fontWeight: 800 }}>
+              {editing ? "Edit Profile" : u.name as string || "Your Profile"}
+            </h1>
+            <p style={{ margin: "4px 0 0", color: "var(--ink-secondary)", fontSize: 15 }}>
+              {(u.email as string) || user.email}
+            </p>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href="/submit" className="ghost-btn" style={{ textDecoration: "none" }}>
-            New Claim
-          </Link>
+
+        {!editing ? (
+          <button className="aurora-btn" onClick={() => setEditing(true)}>
+            ✏️ Edit Profile
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              className="aurora-btn"
+              style={{ background: "transparent", color: "var(--ink)", boxShadow: "none", border: "1px solid var(--line)" }}
+              onClick={() => {
+                setEditing(false);
+                setSaveMsg("");
+              }}
+            >
+              Cancel
+            </button>
+            <button className="aurora-btn" onClick={handleSave} disabled={saving}>
+              {saving ? <span className="spinner" /> : "Save Changes"}
+            </button>
+          </div>
+        )}
+
+        <div style={{ width: "100%", marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
           <button
-            onClick={logout}
+            className="aurora-btn"
+            onClick={downloadStatement}
+            disabled={downloading}
             style={{
-              borderRadius: 12,
-              padding: "10px 12px",
-              border: "1px solid rgba(220,38,38,0.28)",
-              background: "rgba(220,38,38,0.08)",
-              color: "#b4233f",
-              cursor: "pointer",
-              fontWeight: 700,
+              background: "var(--surface-strong)",
+              color: "var(--ink)",
+              border: "1px solid var(--line)",
+              fontSize: 13,
+              padding: "8px 16px",
+              opacity: downloading ? 0.7 : 1,
+              cursor: downloading ? "wait" : "pointer"
             }}
           >
-            Sign Out
+            {downloading ? "⏳ Downloading..." : "📄 Download Statement (PDF)"}
           </button>
         </div>
       </section>
 
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
-        <article className="surface-card" style={{ padding: 18 }}>
-          <div style={{ fontSize: 12, color: "#66847c", fontWeight: 700 }}>Total Balance</div>
-          <div style={{ fontSize: 34, marginTop: 6, color: "#0f5f4e", fontWeight: 800 }}>
-            {profileData.balance || 0}
-            <span style={{ fontSize: 15, color: "#6a8880", marginLeft: 6 }}>credits</span>
-          </div>
-        </article>
+      {saveMsg && (
+        <div className={`status-banner ${saveMsg.includes("fail") ? "error" : "success"}`}>
+          {saveMsg.includes("fail") ? "⚠️" : "✅"} {saveMsg}
+        </div>
+      )}
 
-        <article className="surface-card" style={{ padding: 18 }}>
-          <div style={{ fontSize: 12, color: "#66847c", fontWeight: 700, marginBottom: 8 }}>Green Score</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 34, color: "#0f5f4e", fontWeight: 800 }}>{score ?? "N/A"}</span>
-            {score ? <span style={{ color: "#6a8880", fontSize: 12 }}>/ 850</span> : null}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
+        {/* Green Score */}
+        <section className="glass-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320 }}>
+          <h3 style={{ margin: "0 0 16px", color: "var(--ink-secondary)", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase", fontSize: 13 }}>
+            Green Credit Score
+          </h3>
+          <GreenScoreGauge score={greenScore} size={200} label=".greeniFy+" />
+          <div style={{ marginTop: 24, textAlign: "center" }}>
+            <div style={{ fontSize: 32, fontWeight: 800, color: "var(--primary)" }}>
+              {profile?.balance ?? 0} pts
+            </div>
+            <div style={{ fontSize: 13, color: "var(--ink-muted)", fontWeight: 600 }}>Current Balance</div>
           </div>
-          <div style={{ height: 8, marginTop: 10, borderRadius: 999, background: "rgba(13,49,39,0.1)", overflow: "hidden" }}>
+        </section>
+
+        {/* Account Details */}
+        <section className="glass-card">
+          <h3 style={{ margin: "0 0 24px", color: "var(--ink-secondary)", fontWeight: 700, fontSize: 18 }}>
+            Personal Details
+          </h3>
+
+          <div style={{ display: "grid", gap: 20 }}>
+            {/* Name */}
+            <div style={fieldStyle}>
+              <span className="field-label" style={{ color: "var(--ink-muted)", fontSize: 13, fontWeight: 600 }}>FULL NAME</span>
+              {editing ? (
+                <input className="aurora-input" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              ) : (
+                <div style={{ fontWeight: 600, fontSize: 16 }}>{(u.name as string) || "—"}</div>
+              )}
+            </div>
+
+            {/* Phone */}
+            <div style={fieldStyle}>
+              <span className="field-label" style={{ color: "var(--ink-muted)", fontSize: 13, fontWeight: 600 }}>PHONE</span>
+              {editing ? (
+                <input className="aurora-input" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="(555) 000-0000" />
+              ) : (
+                <div style={{ fontWeight: 600, fontSize: 16 }}>{(u.phone as string) || "—"}</div>
+              )}
+            </div>
+
+            {/* Address */}
+            <div style={fieldStyle}>
+              <span className="field-label" style={{ color: "var(--ink-muted)", fontSize: 13, fontWeight: 600 }}>ADDRESS</span>
+              {editing ? (
+                <input className="aurora-input" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} placeholder="123 Green St" />
+              ) : (
+                <div style={{ fontWeight: 600, fontSize: 16 }}>{(u.address as string) || "—"}</div>
+              )}
+            </div>
+
+            {/* City/State/Zip Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12 }}>
+              <div>
+                <span style={{ display: "block", marginBottom: 6, fontSize: 12, fontWeight: 700, color: "var(--ink-muted)" }}>CITY</span>
+                {editing ? (
+                  <input className="aurora-input" value={editCity} onChange={(e) => setEditCity(e.target.value)} placeholder="City" />
+                ) : (
+                  <div style={{ fontWeight: 600 }}>{(u.city as string) || "—"}</div>
+                )}
+              </div>
+              <div>
+                <span style={{ display: "block", marginBottom: 6, fontSize: 12, fontWeight: 700, color: "var(--ink-muted)" }}>STATE</span>
+                {editing ? (
+                  <input className="aurora-input" value={editState} onChange={(e) => setEditState(e.target.value)} placeholder="CA" />
+                ) : (
+                  <div style={{ fontWeight: 600 }}>{(u.state as string) || "—"}</div>
+                )}
+              </div>
+              <div>
+                <span style={{ display: "block", marginBottom: 6, fontSize: 12, fontWeight: 700, color: "var(--ink-muted)" }}>ZIP</span>
+                {editing ? (
+                  <input className="aurora-input" value={editZip} onChange={(e) => setEditZip(e.target.value)} placeholder="00000" />
+                ) : (
+                  <div style={{ fontWeight: 600 }}>{(u.zip as string) || "—"}</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* Account Status Badges */}
+      <section className="glass-card" style={{ padding: "20px 24px", display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0, color: "var(--ink-secondary)", fontSize: 14, fontWeight: 700, textTransform: "uppercase" }}>
+          Verification Status
+        </h3>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {[
+            { label: "KYC Verified", done: !!u.kycComplete, icon: "🆔" },
+            { label: "Fraud Cleared", done: !!u.fraudClear, icon: "🛡️" },
+            { label: "Green Score Active", done: !!u.greenScore, icon: "🌱" },
+          ].map((s) => (
             <div
+              key={s.label}
               style={{
-                height: "100%",
-                width: `${scoreProgress}%`,
+                padding: "6px 12px",
                 borderRadius: 999,
-                background: "linear-gradient(90deg, #0f9d8b, #2bb673)",
+                fontWeight: 700,
+                fontSize: 13,
+                border: `1px solid ${s.done ? "rgba(16, 185, 129, 0.3)" : "var(--line)"}`,
+                background: s.done ? "rgba(16, 185, 129, 0.1)" : "var(--surface-subtle)",
+                color: s.done ? "var(--positive)" : "var(--ink-muted)",
+                display: "flex", alignItems: "center", gap: 6
               }}
-            />
-          </div>
-        </article>
-
-        <article className="surface-card" style={{ padding: 18 }}>
-          <div style={{ fontSize: 12, color: "#66847c", fontWeight: 700, marginBottom: 10 }}>Verification Status</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {statusPill(profileData.user?.kycComplete, "KYC Verified", "KYC Pending")}
-            {statusPill(profileData.user?.fraudClear, "Fraud Clear", "Fraud Review")}
-          </div>
-        </article>
-      </section>
-
-      <section className="surface-card" style={{ padding: 20 }}>
-        <h2 style={{ margin: "0 0 10px", color: "#104236" }}>Recent Transactions</h2>
-        {!txs.length ? (
-          <div style={{ textAlign: "center", color: "#739089", padding: 20 }}>No transactions yet</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {txs.map((tx, idx) => {
-              const amount = tx.amount ?? 0;
-              const positive = amount > 0;
-              const timeRaw = tx.timestamp || tx.date;
-              const when = timeRaw ? new Date(timeRaw).toLocaleString() : "No date";
-              const label = tx.description || tx.memo || "Transaction";
-              return (
-                <div
-                  key={`${timeRaw || "tx"}-${idx}`}
-                  style={{
-                    border: "1px solid rgba(9,76,64,0.12)",
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    background: "rgba(255,255,255,0.66)",
-                  }}
-                >
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <div
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 999,
-                        display: "grid",
-                        placeItems: "center",
-                        background: positive ? "rgba(16,185,129,0.16)" : "rgba(220,38,38,0.14)",
-                        color: positive ? "#0f8a69" : "#b4233f",
-                        fontWeight: 900,
-                      }}
-                    >
-                      {positive ? "↓" : "↑"}
-                    </div>
-                    <div>
-                      <div style={{ color: "#133e34", fontWeight: 700, fontSize: 14 }}>{label}</div>
-                      <div style={{ color: "#77948d", fontSize: 12 }}>{when}</div>
-                    </div>
-                  </div>
-                  <div style={{ fontWeight: 800, color: positive ? "#0f8a69" : "#b4233f" }}>
-                    {positive ? "+" : ""}
-                    {amount}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+            >
+              {s.icon} {s.label}
+              {s.done && <span style={{ fontSize: 10, marginLeft: 4 }}>✓</span>}
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );
