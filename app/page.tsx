@@ -5,99 +5,189 @@ import { useRouter } from "next/navigation";
 import { apiGet } from "@/lib/api";
 import Link from "next/link";
 
+type Wallet = {
+  balance: number;
+};
+type Transaction = {
+  type?: string;
+  amount?: number;
+  description?: string;
+  memo?: string;
+  timestamp?: string;
+  date?: string;
+};
+
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [wallet, setWallet] = useState<{ balance: number; transactions: { type: string; amount: number; memo: string; date: string }[] } | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) { router.push("/auth"); return; }
-    if (!user.kycComplete) { router.push("/kyc"); return; }
-    if (!user.fraudClear) { router.push("/fraud"); return; }
-    if (!user.greenScore) { router.push("/green-score"); return; }
-    apiGet("/api/wallet").then(setWallet).catch(console.error);
+    if (!user) return void router.push("/auth");
+    if (!user.kycComplete) return void router.push("/kyc");
+    if (!user.fraudClear) return void router.push("/fraud");
+    if (!user.greenScore) return void router.push("/green-score");
+    (async () => {
+      try {
+        const [walletData, profileData] = await Promise.all([apiGet("/api/wallet"), apiGet("/api/profile")]);
+        setWallet(walletData);
+        setTransactions(profileData?.transactions || []);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
   }, [user, authLoading, router]);
 
-  if (authLoading || !user) return <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>Loading...</div>;
+  if (authLoading || !user) {
+    return <div style={{ textAlign: "center", padding: 72, color: "#7b9b93" }}>Loading dashboard...</div>;
+  }
 
   const score = user.greenScore || 0;
-  const circumference = 2 * Math.PI * 80;
-  const pct = Math.min((score / 850) * 100, 100);
-  const offset = circumference - (pct / 100) * circumference;
-  const rating = score >= 700 ? "Excellent" : score >= 600 ? "Good" : score >= 500 ? "Fair" : "Needs Improvement";
+  const progress = Math.min((score / 850) * 100, 100);
+  const rating =
+    score >= 700 ? "Excellent" : score >= 600 ? "Good" : score >= 500 ? "Fair" : "Needs Improvement";
 
   return (
-    <div>
-      <h1 style={{ color: "#065f46", marginBottom: 24 }}>Welcome back, {user.name.split(" ")[0]}! 🌿</h1>
+    <div style={{ display: "grid", gap: 18 }}>
+      <section
+        className="surface-card"
+        style={{
+          padding: 22,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+          background: "linear-gradient(128deg, rgba(255,255,255,0.86), rgba(230,249,240,0.76), rgba(223,242,255,0.68))",
+        }}
+      >
+        <div>
+          <h1 className="headline" style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>
+            Welcome back, {user.name.split(" ")[0]}
+          </h1>
+          <p style={{ margin: "6px 0 0", color: "#5f7a73" }}>
+            Track your impact, earn credits, and redeem smarter rewards.
+          </p>
+        </div>
+        <div style={{ border: "1px solid rgba(15,157,139,0.25)", borderRadius: 999, padding: "8px 14px", fontWeight: 700, color: "#0f5f4e" }}>
+          {wallet?.balance ?? 0} points
+        </div>
+      </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
-        {/* Green Score Card */}
-        <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 4px 24px rgba(0,0,0,0.08)", textAlign: "center" }}>
-          <h3 style={{ color: "#065f46", marginTop: 0, marginBottom: 8 }}>Green Credit Score</h3>
-          <svg width="180" height="180" viewBox="0 0 200 200">
-            <circle cx="100" cy="100" r="80" fill="none" stroke="#e5e7eb" strokeWidth="12" />
-            <circle cx="100" cy="100" r="80" fill="none" stroke="#059669" strokeWidth="12"
-              strokeDasharray={circumference} strokeDashoffset={offset}
-              strokeLinecap="round" transform="rotate(-90 100 100)" />
-            <text x="100" y="92" textAnchor="middle" fontSize="36" fontWeight="700" fill="#065f46">{score}</text>
-            <text x="100" y="116" textAnchor="middle" fontSize="14" fill="#059669">{rating}</text>
-          </svg>
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
+        <div className="surface-card" style={{ padding: 22 }}>
+          <h3 style={{ margin: "0 0 10px", color: "#0f5f4e" }}>Green Score</h3>
+          <div style={{ height: 10, borderRadius: 999, background: "rgba(13,49,39,0.1)", overflow: "hidden" }}>
+            <div
+              style={{
+                height: "100%",
+                width: `${progress}%`,
+                background: "linear-gradient(90deg, #0f9d8b, #2bb673)",
+                borderRadius: 999,
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 12 }}>
+            <span style={{ fontSize: 38, fontWeight: 800, color: "#104236" }}>{score}</span>
+            <span style={{ color: "#5f7a73" }}>/ 850</span>
+          </div>
+          <div style={{ color: "#0f9d8b", fontWeight: 700 }}>{rating}</div>
         </div>
 
-        {/* Green Points Card */}
-        <div style={{ background: "linear-gradient(135deg, #059669, #0d9488)", borderRadius: 16, padding: 24, color: "#fff", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ fontSize: 13, opacity: 0.8 }}>Green Points Balance</div>
-          <div style={{ fontSize: 48, fontWeight: 700, marginTop: 8 }}>{wallet?.balance ?? 0}</div>
-          <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>credits available</div>
-          <Link href="/marketplace" style={{ marginTop: 16, display: "inline-block", background: "rgba(255,255,255,0.2)", color: "#fff", padding: "8px 16px", borderRadius: 8, textDecoration: "none", fontSize: 13, textAlign: "center" }}>
-            Browse Marketplace →
+        <div className="surface-card" style={{ padding: 22, background: "linear-gradient(145deg, #0f9d8b, #178d62)", color: "#fff" }}>
+          <h3 style={{ margin: "0 0 10px", fontWeight: 700 }}>Points Wallet</h3>
+          <div style={{ fontSize: 48, fontWeight: 800, lineHeight: 1 }}>{wallet?.balance ?? 0}</div>
+          <p style={{ margin: "6px 0 14px", opacity: 0.9 }}>Available for redemptions</p>
+          <Link
+            href="/marketplace"
+            style={{
+              display: "inline-block",
+              textDecoration: "none",
+              color: "#104236",
+              background: "#fff",
+              borderRadius: 12,
+              padding: "8px 14px",
+              fontWeight: 700,
+            }}
+          >
+            Open Marketplace
           </Link>
         </div>
-      </div>
+      </section>
 
-      {/* Quick Actions */}
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 4px 24px rgba(0,0,0,0.08)", marginBottom: 24 }}>
-        <h3 style={{ color: "#065f46", marginTop: 0 }}>Quick Actions</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <section className="surface-card" style={{ padding: 22 }}>
+        <h3 style={{ margin: "0 0 12px", color: "#0f5f4e" }}>Quick Actions</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
           {[
-            { href: "/submit", icon: "📝", label: "Submit Action" },
-            { href: "/marketplace", icon: "🛒", label: "Marketplace" },
-            { href: "/submit", icon: "📸", label: "Scan Receipt" },
-          ].map(a => (
-            <Link key={a.label} href={a.href} style={{
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-              padding: 16, borderRadius: 12, border: "1px solid #e5e7eb", textDecoration: "none", color: "#374151",
-              transition: "background 0.2s",
-            }}>
-              <span style={{ fontSize: 28 }}>{a.icon}</span>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{a.label}</span>
+            { href: "/submit", title: "Submit Action", icon: "📝" },
+            { href: "/marketplace", title: "Browse Rewards", icon: "🛒" },
+          ].map((item) => (
+            <Link
+              key={item.title}
+              href={item.href}
+              style={{
+                textDecoration: "none",
+                color: "#124339",
+                borderRadius: 14,
+                border: "1px solid rgba(9,76,64,0.14)",
+                background: "rgba(255,255,255,0.72)",
+                padding: "14px 12px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontWeight: 700,
+                transition: "transform .16s ease, box-shadow .16s ease",
+                boxShadow: "0 6px 16px rgba(10,83,68,0.08)",
+              }}
+            >
+              <span style={{ fontSize: 20 }}>{item.icon}</span>
+              {item.title}
             </Link>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Recent Transactions */}
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
-        <h3 style={{ color: "#065f46", marginTop: 0 }}>Recent Transactions</h3>
-        {(wallet?.transactions?.length ?? 0) === 0 ? (
-          <p style={{ color: "#9ca3af", textAlign: "center", padding: 20 }}>No transactions yet. Submit a green action to earn credits!</p>
+      <section className="surface-card" style={{ padding: 22 }}>
+        <h3 style={{ margin: "0 0 12px", color: "#0f5f4e" }}>Recent Transactions</h3>
+        {!transactions.length ? (
+          <p style={{ margin: 0, color: "#6d8982" }}>No transactions yet. Submit your first claim to earn points.</p>
         ) : (
-          <div>
-            {wallet?.transactions.slice(0, 10).map((tx, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < 9 ? "1px solid #f3f4f6" : "none" }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: "#374151" }}>{tx.memo}</div>
-                  <div style={{ fontSize: 12, color: "#9ca3af" }}>{new Date(tx.date).toLocaleDateString()}</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {transactions.slice(0, 8).map((tx, index) => {
+              const amount = tx.amount ?? 0;
+              const when = tx.timestamp || tx.date || "";
+              return (
+                <div
+                  key={`${when}-${index}`}
+                  style={{
+                    border: "1px solid rgba(9,76,64,0.12)",
+                    borderRadius: 12,
+                    padding: "10px 12px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    background: "rgba(255,255,255,0.68)",
+                  }}
+                >
+                  <div>
+                    <div style={{ color: "#133e34", fontWeight: 600 }}>
+                      {tx.description || tx.memo || "Transaction"}
+                    </div>
+                    <div style={{ color: "#799790", fontSize: 12 }}>
+                      {when ? new Date(when).toLocaleString() : "No date"}
+                    </div>
+                  </div>
+                  <div style={{ color: amount > 0 ? "#118e63" : "#b4233f", fontWeight: 800 }}>
+                    {amount > 0 ? `+${amount}` : amount} pts
+                  </div>
                 </div>
-                <div style={{ fontWeight: 600, color: tx.amount > 0 ? "#059669" : "#dc2626" }}>
-                  {tx.amount > 0 ? "+" : ""}{tx.amount} pts
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

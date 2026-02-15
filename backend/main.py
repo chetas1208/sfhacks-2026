@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -6,12 +6,16 @@ import uvicorn
 import os
 import jwt
 import json
+import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import httpx
 
 from backend import db
 
-load_dotenv()
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env.example"))
 
 app = FastAPI()
 
@@ -27,6 +31,11 @@ app.add_middleware(
 # ── JWT ────────────────────────────────────────────────────
 JWT_SECRET = os.getenv("JWT_SECRET", "secret")
 ALGORITHM = "HS256"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2")
+POINTS_PER_USD = float(os.getenv("POINTS_PER_USD", "0.5"))
 
 def create_token(email: str, role: str, user_id: int) -> str:
     payload = {
@@ -76,6 +85,9 @@ class ClaimRequest(BaseModel):
     description: Optional[str] = None
     receiptNumber: str
     amount: float
+
+class AiChatRequest(BaseModel):
+    message: str
 
 # ── Endpoints ──────────────────────────────────────────────
 
@@ -262,8 +274,8 @@ def submit_claim(req: ClaimRequest, authorization: str = Header(None)):
     if db.find_one("claims", "receiptNumber", req.receiptNumber):
         raise HTTPException(status_code=400, detail="Duplicate receipt number. Claim rejected.")
 
-    # Credits logic: 1 credit per $1 spent
-    points = req.amount
+    # Credits logic: configurable conversion
+    points = round(req.amount * POINTS_PER_USD, 2)
     
     # Save claim
     claim = {
@@ -349,6 +361,130 @@ def get_wallet_info(authorization: str = Header(None)):
     wallet = db.find_one("user_wallets", "email", user["email"])
     if not wallet: return {"balance": 0}
     return wallet
+
+
+def _extract_conversion_reply(message: str) -> Optional[str]:
+    text = message.lower().replace(",", "").strip()
+    points_rate = 1.0 / POINTS_PER_USD
+    dollars_rate = POINTS_PER_USD
+
+    point_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:points?|pts?)", text)
+    dollar_match = re.search(r"(?:\$|usd|dollars?)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:usd|dollars?)", text)
+
+    if point_match and ("to $" in text or "to dollars" in text or "to usd" in text or "points to" in text):
+        pts = float(point_match.group(1))
+        usd = pts * points_rate
+        return f"{pts:g} points is approximately ${usd:,.2f} (using 1 point ≈ ${points_rate:.2f})."
+
+    if dollar_match and ("to points" in text or "usd to points" in text or "dollars to points" in text):
+        usd_raw = dollar_match.group(1) or dollar_match.group(2)
+        usd = float(usd_raw)
+        pts = usd * dollars_rate
+        return f"${usd:,.2f} is approximately {pts:g} points (using $1.00 ≈ {dollars_rate:g} points)."
+
+    return None
+
+
+@app.post("/api/ai/chat")
+async def ai_chat(req: AiChatRequest):
+    message = (req.message or "").strip()
+    if not message:
+        raise HTTPException(400, "Message is required")
+
+    quick_conversion = _extract_conversion_reply(message)
+    if quick_conversion:
+        return {"reply": quick_conversion, "source": "conversion"}
+
+    if not GEMINI_API_KEY:
+        return {"reply": "GEMINI_API_KEY is not configured.", "source": "config"}
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": (
+                            "You are GreenBot for a green rewards app. "
+                            "Reply in 2-4 concise sentences with practical advice.\n\n"
+                            f"User: {message}"
+                        )
+                    }
+                ],
+            }
+        ],
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 280},
+    }
+
+    preferred_models = [GEMINI_MODEL, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"]
+    tried = []
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            for model in preferred_models:
+                if model in tried:
+                    continue
+                tried.append(model)
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                res = await client.post(url, json=payload)
+                if res.status_code == 404:
+                    continue
+                res.raise_for_status()
+                data = res.json()
+                reply = (
+                    data.get("candidates", [{}])[0]
+                    .get("content", {})
+                    .get("parts", [{}])[0]
+                    .get("text", "")
+                    .strip()
+                )
+                if not reply:
+                    reply = "I could not generate a response right now."
+                return {"reply": reply, "source": "gemini", "model": model}
+    except Exception as e:
+        raise HTTPException(502, f"Gemini request failed: {str(e)}")
+
+    raise HTTPException(502, f"No compatible Gemini model found from: {', '.join(tried)}")
+
+
+@app.post("/api/ai/speech-to-text")
+async def ai_speech_to_text(file: UploadFile = File(...)):
+    if not ELEVENLABS_API_KEY:
+        raise HTTPException(400, "ELEVENLABS_API_KEY is not configured")
+
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(400, "Audio file is empty")
+
+    files = {
+        "file": (
+            file.filename or "speech.webm",
+            audio_bytes,
+            file.content_type or "audio/webm",
+        )
+    }
+    data = {"model_id": ELEVENLABS_STT_MODEL}
+    headers = {"xi-api-key": ELEVENLABS_API_KEY}
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            res = await client.post(
+                "https://api.elevenlabs.io/v1/speech-to-text",
+                headers=headers,
+                data=data,
+                files=files,
+            )
+        if res.status_code >= 400:
+            raise HTTPException(502, f"ElevenLabs STT failed: {res.status_code} {res.text[:240]}")
+        payload = res.json()
+        transcript = (payload.get("text") or payload.get("transcript") or "").strip()
+        if not transcript:
+            raise HTTPException(502, "ElevenLabs STT returned no transcript text")
+        return {"text": transcript, "provider": "elevenlabs", "model": ELEVENLABS_STT_MODEL}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Speech-to-text failed: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=5001, reload=True)

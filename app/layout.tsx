@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import Navbar from "@/components/Navbar";
+import AiBotWidget from "@/components/AiBotWidget";
 
 export const metadata: Metadata = {
   title: "Green Energy Credit Bank",
@@ -11,10 +12,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-[#0a0a0a] min-h-screen">
+      <body>
         <Providers>
-          <Navbar />
-          <main className="pt-20 px-4 max-w-7xl mx-auto">{children}</main>
+          <div className="app-shell">
+            <div className="ambient-orb one" />
+            <div className="ambient-orb two" />
+            <Navbar />
+            <main className="main-wrap">{children}</main>
+            <AiBotWidget />
+          </div>
         </Providers>
       </body>
     </html>

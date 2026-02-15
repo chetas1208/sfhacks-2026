@@ -1,162 +1,257 @@
 "use client";
-import React, { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthContext";
 import { useRouter } from "next/navigation";
 
+type MarketplaceItem = {
+  _id: number;
+  title: string;
+  description: string;
+  cost: number;
+  type?: "offer" | "product" | string;
+  category?: string;
+  inventory?: number;
+  image?: string;
+  imageUrl?: string;
+  image_url?: string;
+  brand?: string;
+};
+
 export default function MarketplacePage() {
-    const { user, loading: authLoading } = useAuth();
-    const router = useRouter();
-    const [items, setItems] = useState<any[]>([]);
-    const [balance, setBalance] = useState(0);
-    const [activeTab, setActiveTab] = useState("product"); // "product" or "offer"
-    const [loading, setLoading] = useState(true);
-    const [purchasing, setPurchasing] = useState<number | null>(null);
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const [items, setItems] = useState<MarketplaceItem[]>([]);
+  const [balance, setBalance] = useState(0);
+  const [activeTab, setActiveTab] = useState<"product" | "offer">("product");
+  const [loading, setLoading] = useState(true);
+  const [purchasing, setPurchasing] = useState<number | null>(null);
 
-    useEffect(() => {
-        if (!authLoading && !user) router.push("/auth");
-    }, [user, authLoading, router]);
+  useEffect(() => {
+    if (!authLoading && !user) router.push("/auth");
+  }, [user, authLoading, router]);
 
-    useEffect(() => {
-        if (user) {
-            fetchData();
+  useEffect(() => {
+    if (!user) return;
+    const token = localStorage.getItem("gecb_token");
+    if (!token) return;
+
+    (async () => {
+      try {
+        const walletRes = await fetch("/api/wallet", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (walletRes.ok) {
+          const wallet = await walletRes.json();
+          setBalance(wallet.balance || 0);
         }
-    }, [user]);
 
-    const fetchData = async () => {
-        try {
-            const token = localStorage.getItem("gecb_token");
-
-            // Fetch wallet
-            const walletRes = await fetch("/api/wallet", {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            if (walletRes.ok) {
-                const w = await walletRes.json();
-                setBalance(w.balance);
-            }
-
-            // Fetch marketplace items
-            const marketRes = await fetch("/api/marketplace");
-            if (marketRes.ok) {
-                const data = await marketRes.json();
-                setItems(data);
-            }
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
+        const marketRes = await fetch("/api/marketplace");
+        if (marketRes.ok) {
+          const data = await marketRes.json();
+          setItems(data || []);
         }
-    };
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [user]);
 
-    const handleRedeem = async (item: any) => {
-        if (balance < item.cost) return;
-        setPurchasing(item._id);
-        try {
-            const token = localStorage.getItem("gecb_token");
+  const filteredItems = useMemo(
+    () => items.filter((item) => (item.type || "product") === activeTab),
+    [items, activeTab]
+  );
 
-            // Passing item_id as query param to match backend expectation
-            const res = await fetch(`/api/marketplace/redeem?item_id=${item._id}`, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}` }
-            });
+  const handleRedeem = async (item: MarketplaceItem) => {
+    if (balance < item.cost || purchasing) return;
+    setPurchasing(item._id);
+    try {
+      const token = localStorage.getItem("gecb_token");
+      const res = await fetch(`/api/marketplace/redeem?item_id=${item._id}`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
-            if (res.ok) {
-                const data = await res.json();
-                setBalance(data.new_balance);
-                alert(`Successfully redeemed: ${item.title}`);
-            } else {
-                const err = await res.json();
-                alert(err.detail || "Redemption failed");
-            }
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setPurchasing(null);
-        }
-    };
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Redemption failed" }));
+        throw new Error(err.detail || "Redemption failed");
+      }
+      const data = await res.json();
+      setBalance(data.new_balance || 0);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Redemption failed");
+    } finally {
+      setPurchasing(null);
+    }
+  };
 
-    const filteredItems = items.filter(i => (i.type || "product") === activeTab);
+  if (authLoading || loading) {
+    return <div style={{ textAlign: "center", color: "#6f8d85", padding: 64 }}>Loading marketplace...</div>;
+  }
 
-    if (authLoading || loading) return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">Loading...</div>;
-
-    return (
-        <div className="min-h-screen bg-[#0a0a0a] text-white font-sans">
-            <div className="max-w-6xl mx-auto px-6 py-12">
-                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-                    <div>
-                        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-emerald-600">
-                            Marketplace
-                        </h1>
-                        <p className="text-gray-400 mt-1">Redeem your credits for eco-friendly rewards</p>
-                    </div>
-                    <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 flex items-center gap-2">
-                        <span className="text-gray-400 text-sm">Your Balance:</span>
-                        <span className="text-2xl font-bold text-green-400">{balance}</span>
-                        <span className="text-xs text-gray-500 uppercase tracking-wider">Credits</span>
-                    </div>
-                </div>
-
-                {/* Tabs */}
-                <div className="flex gap-4 mb-8 border-b border-white/10 pb-4">
-                    {["product", "offer"].map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2 rounded-lg transition-all capitalize ${activeTab === tab
-                                ? "bg-green-500/20 text-green-400 font-bold"
-                                : "text-gray-400 hover:text-white"
-                                }`}
-                        >
-                            {tab}s
-                        </button>
-                    ))}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredItems.map((item) => (
-                        <div key={item._id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-green-500/30 transition-all group">
-                            <div className="h-48 bg-gray-800 relative">
-                                {/* Placeholder image logic */}
-                                <div className="absolute inset-0 flex items-center justify-center text-gray-600">
-                                    {item.image ? (
-                                        <img src={item.image} alt={item.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                                    ) : (
-                                        <span className="text-4xl">🛍️</span>
-                                    )}
-                                </div>
-                                <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-md text-xs font-bold text-white border border-white/10">
-                                    {item.cost} Credits
-                                </div>
-                            </div>
-                            <div className="p-6">
-                                <h3 className="text-xl font-bold mb-2">{item.title}</h3>
-                                <p className="text-gray-400 text-sm mb-4 min-h-[40px]">{item.description}</p>
-                                <div className="flex flex-col gap-2">
-                                    <button
-                                        onClick={() => handleRedeem(item)}
-                                        disabled={balance < item.cost || purchasing === item._id}
-                                        className={`w-full py-3 rounded-xl font-bold transition-all ${balance >= item.cost
-                                            ? "bg-white text-black hover:bg-green-400 hover:text-black"
-                                            : "bg-white/10 text-gray-500 cursor-not-allowed"
-                                            }`}
-                                    >
-                                        {purchasing === item._id ? "Processing..." : balance >= item.cost ? "Redeem" : "Insufficient Credits"}
-                                    </button>
-                                    <div className="text-center text-xs text-gray-500">
-                                        {item.inventory !== undefined ? `${item.inventory} left` : ''}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-                {filteredItems.length === 0 && (
-                    <div className="text-center py-20 text-gray-500">
-                        No {activeTab}s available currently.
-                    </div>
-                )}
-            </div>
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <section
+        className="surface-card"
+        style={{
+          padding: 22,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          background:
+            "linear-gradient(130deg, rgba(255,255,255,0.85), rgba(225,249,240,0.78), rgba(221,241,255,0.72))",
+        }}
+      >
+        <div>
+          <h1 className="headline" style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>
+            Marketplace
+          </h1>
+          <p style={{ margin: "6px 0 0", color: "#6a8880" }}>
+            Redeem your points for practical products and curated offers.
+          </p>
         </div>
-    );
+        <div
+          style={{
+            borderRadius: 14,
+            border: "1px solid rgba(9,76,64,0.14)",
+            background: "rgba(255,255,255,0.78)",
+            padding: "8px 12px",
+            display: "flex",
+            alignItems: "baseline",
+            gap: 8,
+            boxShadow: "0 10px 24px rgba(10,83,68,0.12)",
+          }}
+        >
+          <span style={{ color: "#5f7d75", fontSize: 12, fontWeight: 700 }}>Balance</span>
+          <span style={{ fontSize: 28, fontWeight: 800, color: "#0f5f4e" }}>{balance}</span>
+          <span style={{ color: "#6a8880", fontSize: 12 }}>points</span>
+        </div>
+      </section>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {(["product", "offer"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              border: "1px solid rgba(9,76,64,0.16)",
+              borderRadius: 999,
+              padding: "8px 16px",
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: 13,
+              background: activeTab === tab ? "linear-gradient(135deg, #0f9d8b, #1f9967)" : "rgba(255,255,255,0.74)",
+              color: activeTab === tab ? "#fff" : "#0f5f4e",
+              boxShadow: activeTab === tab ? "0 10px 22px rgba(10,130,103,0.28)" : "none",
+            }}
+          >
+            {tab === "offer" ? "Offers" : "Products"}
+          </button>
+        ))}
+      </div>
+
+      {filteredItems.length === 0 ? (
+        <div className="surface-card" style={{ padding: 26, textAlign: "center", color: "#6a8880" }}>
+          No {activeTab}s available right now.
+        </div>
+      ) : (
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 14 }}>
+          {filteredItems.map((item) => {
+            const image = item.image || item.imageUrl || item.image_url || "";
+            const disabled = purchasing === item._id || balance < item.cost;
+            return (
+              <article
+                key={item._id}
+                className="surface-card"
+                style={{
+                  padding: 14,
+                  display: "grid",
+                  gap: 10,
+                  minHeight: 320,
+                  background: "linear-gradient(155deg, rgba(255,255,255,0.86), rgba(239,250,245,0.74))",
+                }}
+              >
+                <div
+                  style={{
+                    height: 150,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    background: "linear-gradient(145deg, rgba(15,157,139,0.12), rgba(90,184,255,0.12))",
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  {image ? (
+                    <img src={image} alt={item.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <span style={{ fontSize: 36 }}>🛍️</span>
+                  )}
+                </div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.4,
+                        color: "#0c8a71",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {item.brand || (activeTab === "offer" ? "Featured Offer" : "Marketplace")}
+                    </span>
+                    <span
+                      style={{
+                        borderRadius: 999,
+                        padding: "2px 8px",
+                        background: "rgba(15,157,139,0.12)",
+                        color: "#0c7a63",
+                        fontSize: 10,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {activeTab === "offer" ? "Offer" : "Product"}
+                    </span>
+                  </div>
+                  <h3 style={{ margin: 0, color: "#104236", fontSize: 16 }}>{item.title}</h3>
+                  <p style={{ margin: 0, color: "#68847d", fontSize: 13, lineHeight: 1.35 }}>{item.description}</p>
+                </div>
+
+                <div style={{ marginTop: "auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div style={{ color: "#0f5f4e", fontWeight: 800 }}>
+                    {item.cost} pts
+                    {typeof item.inventory === "number" ? (
+                      <div style={{ color: "#7a958f", fontSize: 11, fontWeight: 600 }}>{item.inventory} left</div>
+                    ) : null}
+                  </div>
+
+                  <button
+                    onClick={() => handleRedeem(item)}
+                    disabled={disabled}
+                    style={{
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      background: disabled ? "#b5c6c1" : "linear-gradient(135deg, #0f9d8b, #1f9967)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      fontSize: 12,
+                    }}
+                  >
+                    {purchasing === item._id ? "Processing..." : balance >= item.cost ? "Redeem" : "Need points"}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </section>
+      )}
+    </div>
+  );
 }
