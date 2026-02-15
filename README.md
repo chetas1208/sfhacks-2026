@@ -1,4 +1,4 @@
-# Green Energy Credit Bank (GECB)
+# .greeniFy+ :
 
 A full-stack MVP for a sustainable action tracking and rewards platform. Users can submit claims for green actions, get peer-verified to earn credits, and redeem them in a marketplace. Includes an education module to boost earnings.
 
