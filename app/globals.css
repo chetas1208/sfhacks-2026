@@ -131,6 +131,103 @@ button:focus-visible {
   color: #8aa49d;
 }
 
+.upload-panel {
+  border: 1px solid rgba(9, 76, 64, 0.2);
+  border-radius: 14px;
+  padding: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(233, 249, 241, 0.7));
+  display: grid;
+  gap: 10px;
+}
+
+.upload-pill {
+  border-radius: 999px;
+  border: 1px solid rgba(15, 157, 139, 0.3);
+  background: rgba(15, 157, 139, 0.12);
+  color: #0a7a63;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+
+.upload-dropzone {
+  width: 100%;
+  border: 1px dashed rgba(9, 76, 64, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.upload-dropzone:hover {
+  border-color: rgba(15, 157, 139, 0.5);
+  box-shadow: 0 10px 20px rgba(13, 90, 75, 0.12);
+  transform: translateY(-1px);
+}
+
+.upload-preview,
+.upload-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.upload-preview {
+  object-fit: cover;
+  border: 1px solid rgba(9, 76, 64, 0.2);
+}
+
+.upload-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  border: 1px solid rgba(9, 76, 64, 0.16);
+  background: linear-gradient(135deg, rgba(15, 157, 139, 0.14), rgba(43, 182, 115, 0.14));
+}
+
+.upload-cta {
+  border-radius: 999px;
+  border: 1px solid rgba(9, 76, 64, 0.2);
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f5f4e;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 11px;
+  flex-shrink: 0;
+}
+
+.status-banner {
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.status-banner.success {
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  background: rgba(16, 185, 129, 0.09);
+  color: #0f6b54;
+}
+
+.status-banner.error {
+  border: 1px solid rgba(220, 38, 38, 0.24);
+  background: rgba(220, 38, 38, 0.08);
+  color: #7f1d1d;
+}
+
+.status-banner.info {
+  border: 1px solid rgba(13, 148, 136, 0.28);
+  background: rgba(13, 148, 136, 0.08);
+  color: #0f766e;
+}
+
 .stepper-wrap {
   overflow-x: auto;
   padding: 4px 2px;
@@ -230,5 +327,9 @@ button:focus-visible {
 
   .step-label {
     font-size: 13px;
+  }
+
+  .upload-dropzone {
+    align-items: flex-start;
   }
 }

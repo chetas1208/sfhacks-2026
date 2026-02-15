@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/components/AuthContext";
 import { useRouter } from "next/navigation";
 
@@ -11,16 +11,9 @@ export default function AuthPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [serverStatus, setServerStatus] = useState<"checking" | "online" | "offline">("checking");
 
   const { login, signup } = useAuth();
   const router = useRouter();
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then((res) => setServerStatus(res.ok ? "online" : "offline"))
-      .catch(() => setServerStatus("offline"));
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,13 +36,10 @@ export default function AuthPage() {
     }
   };
 
-  const statusColor =
-    serverStatus === "online" ? "#17a973" : serverStatus === "checking" ? "#f59e0b" : "#dc2626";
-
   return (
     <div style={{ maxWidth: 520, margin: "32px auto" }}>
       <div className="surface-card" style={{ padding: 26 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div style={{ marginBottom: 20 }}>
           <div>
             <div className="headline" style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1 }}>
               {tab === "login" ? "Welcome Back" : "Create Your Account"}
@@ -57,23 +47,6 @@ export default function AuthPage() {
             <p style={{ margin: "6px 0 0", color: "#6a8880" }}>
               Access your green rewards journey.
             </p>
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              borderRadius: 999,
-              padding: "6px 10px",
-              border: "1px solid rgba(9,76,64,0.16)",
-              background: "rgba(255,255,255,0.72)",
-              color: "#25564a",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor }} />
-            API {serverStatus.toUpperCase()}
           </div>
         </div>
 

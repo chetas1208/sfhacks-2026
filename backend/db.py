@@ -65,7 +65,7 @@ def _mem_ensure(col: str):
     if col not in _mem:
         _mem[col] = {}
 
-COLLECTIONS = ["verified_users", "fraud_users", "transactions", "claims", "marketplace", "green_scores"]
+COLLECTIONS = ["verified_users", "fraud_users", "transactions", "claims", "marketplace", "green_scores", "user_wallets"]
 
 # ── Collection management ─────────────────────────────────
 
