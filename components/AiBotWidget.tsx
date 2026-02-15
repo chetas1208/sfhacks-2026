@@ -46,8 +46,15 @@ export default function AiBotWidget() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
       });
-      const data = await res.json();
-      const reply = data?.reply || "I could not respond right now.";
+      const data = await res.json().catch(() => ({}));
+      let reply = "I could not respond right now.";
+      if (!res.ok) {
+        reply = data?.detail || `AI request failed (${res.status}).`;
+      } else if (typeof data?.reply === "string" && data.reply.trim()) {
+        reply = data.reply;
+      } else if (typeof data?.detail === "string" && data.detail.trim()) {
+        reply = data.detail;
+      }
       setMessages((prev) => [...prev, { role: "bot", text: reply }]);
     } catch {
       setMessages((prev) => [

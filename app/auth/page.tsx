@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/components/AuthContext";
 import { useRouter } from "next/navigation";
 
@@ -11,16 +11,9 @@ export default function AuthPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [serverStatus, setServerStatus] = useState<"checking" | "online" | "offline">("checking");
 
   const { login, signup } = useAuth();
   const router = useRouter();
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then((res) => (res.ok ? setServerStatus("online") : setServerStatus("offline")))
-      .catch(() => setServerStatus("offline"));
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,33 +36,14 @@ export default function AuthPage() {
     }
   };
 
-  const statusColor =
-    serverStatus === "online" ? "var(--positive)" : serverStatus === "checking" ? "#f59e0b" : "var(--negative)";
   return (
     <div style={{ maxWidth: 520, margin: "32px auto" }}>
       <div className="surface-card" style={{ padding: 26 }}>
         <div style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              borderRadius: 999,
-              padding: "6px 10px",
-              border: "1px solid var(--line)",
-              background: "var(--surface-subtle)",
-              color: "var(--ink-secondary)",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor }} />
-            API {serverStatus.toUpperCase()}
-          </div>
           <div className="headline" style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.3 }}>
             {tab === "login" ? "Log in" : "Sign Up"}
           </div>
-          <div style={{ width: 80 }}></div> {/* Spacer to center title visually if needed, or just remove if left-align is fine. User asked "in front", usually means left of it or above. I'll put it on the left. */}
+          <div style={{ width: 80 }}></div>
         </div>
 
         <div

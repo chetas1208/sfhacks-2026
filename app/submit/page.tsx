@@ -44,6 +44,7 @@ export default function SubmitPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const CATEGORIES = ["Bart", "CalTrain", "MUNI", "Bike charging", "EV charging"];
+  const POINTS_PER_USD = 0.5; // $1 = 0.5 points
 
   const handleFileSelected = (selected: File | null) => {
     setReceiptImage(selected);
@@ -135,15 +136,21 @@ export default function SubmitPage() {
       });
 
       if (res.ok) {
-        // Calculate estimated points (approx based on $1 = 3pts logic)
-        const pts = Math.round(parseFloat(amount) * 3);
+        const data = await res.json().catch(() => ({}));
+        const amountNum = parseFloat(amount);
+        const pts =
+          typeof data.points === "number"
+            ? data.points
+            : Number.isFinite(amountNum)
+              ? Math.round(amountNum * POINTS_PER_USD * 100) / 100
+              : 0;
         setSubmittedData({
           category,
           date,
           description,
           receiptNumber,
           amount,
-          points: pts
+          points: pts,
         });
         window.scrollTo({ top: 0, behavior: "smooth" });
       } else {
@@ -225,7 +232,9 @@ export default function SubmitPage() {
               <span style={{ fontWeight: 800, fontSize: 16 }}>${submittedData.amount}</span>
 
               <span style={{ color: "var(--primary)", fontWeight: 700 }}>Points Earned</span>
-              <span style={{ color: "var(--primary)", fontWeight: 800, fontSize: 16 }}>+{submittedData.points}</span>
+              <span style={{ color: "var(--primary)", fontWeight: 800, fontSize: 16 }}>
+                +{Number.isInteger(submittedData.points) ? submittedData.points : submittedData.points.toFixed(2)}
+              </span>
             </div>
           </div>
 

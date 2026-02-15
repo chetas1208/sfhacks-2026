@@ -22,6 +22,10 @@ export default function TransactionsPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<number | null>(null);
+    const POINTS_PER_USD = 0.5; // $1 = 0.5 points
+    const dollarsFromPoints = (points: number) => Math.abs(points) / POINTS_PER_USD;
+    const formatPoints = (points: number) =>
+        `${points > 0 ? "+" : points < 0 ? "" : ""}${Number.isInteger(points) ? points : points.toFixed(2)} pts`;
 
     useEffect(() => {
         if (!authLoading && !user) router.push("/auth");
@@ -128,12 +132,15 @@ export default function TransactionsPage() {
                                     <div
                                         style={{
                                             fontWeight: 800,
-                                            fontSize: 16,
+                                            fontSize: 15,
                                             color: isSpend ? "var(--negative)" : "var(--positive)",
                                             textAlign: "right",
                                         }}
                                     >
-                                        {isSpend ? "" : "+"}{tx.amount} pts
+                                        <div>{formatPoints(tx.amount)}</div>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-soft)" }}>
+                                            ≈ ${dollarsFromPoints(tx.amount).toFixed(2)}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -158,7 +165,10 @@ export default function TransactionsPage() {
                                                 }}
                                             >
                                                 <span>{item.title} × {item.quantity}</span>
-                                                <span style={{ fontWeight: 700 }}>{item.cost * item.quantity} pts</span>
+                                                <span style={{ fontWeight: 700 }}>
+                                                    {item.cost * item.quantity} pts
+                                                    <span style={{ color: "var(--ink-soft)", fontWeight: 600 }}> · ${dollarsFromPoints(item.cost * item.quantity).toFixed(2)}</span>
+                                                </span>
                                             </div>
                                         ))}
                                     </div>

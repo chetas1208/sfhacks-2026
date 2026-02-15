@@ -96,6 +96,14 @@ def _mem_ensure(col: str):
 
 COLLECTIONS = ["verified_users", "fraud_users", "transactions", "claims", "marketplace", "green_scores", "user_wallets"]
 
+def _switch_to_memory_fallback(reason: str):
+    global _USE_ACTIAN
+    if _USE_ACTIAN:
+        print(f"[db] ⚠️  Switching to in-memory fallback: {reason}")
+    _USE_ACTIAN = False
+    for name in COLLECTIONS:
+        _mem_ensure(name)
+
 # ── Collection management ─────────────────────────────────
 
 def setup_collections():
@@ -128,9 +136,9 @@ def reset_collections():
 def put(collection: str, record_id: int, payload: dict):
     if _USE_ACTIAN:
         from cortex import CortexClient
-        with CortexClient(ACTIAN_HOST) as c:
-            print(f"[db] Putting {record_id} into {collection}: {payload}")
-            try:
+        try:
+            with CortexClient(ACTIAN_HOST) as c:
+                print(f"[db] Putting {record_id} into {collection}: {payload}")
                 c.upsert(collection, id=record_id, vector=dummy_vec(), payload=payload)
                 c.flush(collection)
                 print(f"[db] Success put {record_id}")
@@ -154,50 +162,56 @@ def put(collection: str, record_id: int, payload: dict):
                     _tx_email_cache[email].append(record_id)
                 
                 _save_cache()
-
-            except Exception as e:
-                print(f"[db] ERROR put: {e}")
-                raise e
+                return
+        except Exception as e:
+            print(f"[db] ERROR put: {e}")
+            _switch_to_memory_fallback(f"Actian write failed on {collection}: {e}")
+            # continue to in-memory write below
     else:
         _mem_ensure(collection)
-        _mem[collection][record_id] = copy.deepcopy(payload)
-        # Also cache for in-memory
-        if collection == "transactions" and payload.get("email"):
-            email = payload["email"]
-            if email not in _tx_email_cache:
-                _tx_email_cache[email] = []
-            if record_id not in _tx_email_cache[email]:
-                _tx_email_cache[email].append(record_id)
+    _mem[collection][record_id] = copy.deepcopy(payload)
+    if collection in ["verified_users", "fraud_users", "user_wallets"] and payload.get("email"):
+        _email_id_cache[payload["email"]] = record_id
+    if collection == "claims" and payload.get("receiptNumber"):
+        _receipt_id_cache[payload["receiptNumber"]] = record_id
+    if collection == "transactions" and payload.get("email"):
+        email = payload["email"]
+        if email not in _tx_email_cache:
+            _tx_email_cache[email] = []
+        if record_id not in _tx_email_cache[email]:
+            _tx_email_cache[email].append(record_id)
+    _save_cache()
 
 def get_by_id(collection: str, record_id: int) -> Optional[dict]:
     if _USE_ACTIAN:
         from cortex import CortexClient
-        with CortexClient(ACTIAN_HOST) as c:
-            try:
+        try:
+            with CortexClient(ACTIAN_HOST) as c:
                 result = c.get(collection, record_id)
                 if result and isinstance(result, tuple) and len(result) == 2:
                     return {**result[1], "_id": record_id}
-            except Exception:
-                pass
-        return None
+        except Exception as e:
+            _switch_to_memory_fallback(f"Actian read failed on {collection}: {e}")
     else:
         _mem_ensure(collection)
-        data = _mem[collection].get(record_id)
-        return {**copy.deepcopy(data), "_id": record_id} if data else None
+    _mem_ensure(collection)
+    data = _mem[collection].get(record_id)
+    return {**copy.deepcopy(data), "_id": record_id} if data else None
 
 def get_all(collection: str, limit: int = 1000) -> List[dict]:
     if _USE_ACTIAN:
         from cortex import CortexClient
-        with CortexClient(ACTIAN_HOST) as c:
-            try:
+        try:
+            with CortexClient(ACTIAN_HOST) as c:
                 result = c.scroll(collection, limit=limit)
                 records = result[0] if isinstance(result, tuple) else result
                 return [{"_id": r.id if hasattr(r,'id') else 0, **(r.payload if hasattr(r,'payload') else {})} for r in records]
-            except Exception:
-                return []
+        except Exception as e:
+            _switch_to_memory_fallback(f"Actian list failed on {collection}: {e}")
     else:
         _mem_ensure(collection)
-        return [{"_id": rid, **copy.deepcopy(data)} for rid, data in list(_mem[collection].items())[:limit]]
+    _mem_ensure(collection)
+    return [{"_id": rid, **copy.deepcopy(data)} for rid, data in list(_mem[collection].items())[:limit]]
 
 def get_transactions_by_email(email: str) -> List[dict]:
     """Retrieve transactions for a specific email using the write-through cache."""
@@ -250,17 +264,8 @@ def delete_record(collection: str, record_id: int):
             del _mem[collection][record_id]
 
 def batch_put(collection: str, start_id: int, payloads: List[dict]):
-    if _USE_ACTIAN:
-        from cortex import CortexClient
-        with CortexClient(ACTIAN_HOST) as c:
-            ids = list(range(start_id, start_id + len(payloads)))
-            vectors = [dummy_vec() for _ in payloads]
-            c.batch_upsert(collection, ids=ids, vectors=vectors, payloads=payloads)
-            c.flush(collection)
-    else:
-        _mem_ensure(collection)
-        for i, payload in enumerate(payloads):
-            _mem[collection][start_id + i] = copy.deepcopy(payload)
+    for i, payload in enumerate(payloads):
+        put(collection, start_id + i, payload)
 
 def health_info() -> dict:
     if _USE_ACTIAN:

@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 import httpx
 
 from backend import db
-from backend.statement import generate_statement_pdf, generate_invoice_pdf
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
@@ -248,6 +247,7 @@ def get_profile(authorization: str = Header(None)):
 def download_statement(authorization: str = Header(None)):
     user = get_user_from_header(authorization)
     if not user: raise HTTPException(401, "Unauthorized")
+    from backend.statement import generate_statement_pdf
     
     # Get wallet
     wallet = db.find_one("user_wallets", "email", user["email"])
@@ -284,6 +284,7 @@ def download_statement(authorization: str = Header(None)):
 def download_invoice(order_id: str, authorization: str = Header(None)):
     user = get_user_from_header(authorization)
     if not user: raise HTTPException(401, "Unauthorized")
+    from backend.statement import generate_invoice_pdf
     
     # Get transaction by order_id using cache for immediate consistency
     user_txs = db.get_transactions_by_email(user["email"])
@@ -476,70 +477,75 @@ async def analyze_claim_image(file: UploadFile = File(...), authorization: str =
         raise HTTPException(401, "Unauthorized")
     if not file:
         raise HTTPException(400, "Image file is required")
+    suffix = os.path.splitext(file.filename or "")[1] or ".jpg"
+    if len(suffix) > 10:
+        suffix = ".jpg"
 
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Uploaded image is empty")
-
+    temp_path = None
     try:
-        from google import genai
-        from google.genai import types
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
+            content = await file.read()
+            if not content:
+                raise HTTPException(400, "Uploaded image is empty")
+            temp.write(content)
+            temp_path = temp.name
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        
-        prompt = """
-        Analyze this receipt/invoice image and extract the following details in strict JSON format:
-        {
-            "category": "One of [Bart, CalTrain, MUNI, Bike charging, EV charging] or infer best fit",
-            "date": "YYYY-MM-DD format if found, otherwise today's date",
-            "receiptNumber": "The receipt/transaction number if found",
-            "amount": float,
-            "description": "Short summary of items/service",
-            "estimatedPoints": float (calculated as amount * 3.0)
-        }
-        """
-        
-        # Convert content to proper format for new SDK
-        # generated_content accepts bytes directly in Part?
-        # Or types.Part.from_bytes(data, mime_type)
-        
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[
-                prompt,
-                types.Part.from_bytes(data=content, mime_type=file.content_type or "image/jpeg")
-            ]
+        result = subprocess.run(
+            [sys.executable, OCR_SCRIPT_PATH, temp_path],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=90,
         )
-        
-        # Clean response
-        text = response.text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.endswith("```"):
-            text = text[:-3]
-            
-        data = json.loads(text)
-        
-        # Ensure fields
-        amount = float(data.get("amount", 0.0))
-        points = round(amount * POINTS_PER_USD, 2) 
-        
+        output = (result.stdout or "").strip()
+        if not output:
+            raise HTTPException(502, f"OCR process failed: {(result.stderr or '').strip()[:200]}")
+
+        try:
+            parsed = json.loads(output)
+        except Exception:
+            raise HTTPException(502, "OCR returned invalid output")
+
+        if parsed.get("error"):
+            raise HTTPException(502, f"OCR failed: {parsed.get('error')}")
+
+        lines_raw = parsed.get("lines", [])
+        lines = [str(line.get("text", "")).strip() for line in lines_raw if str(line.get("text", "")).strip()]
+        detected_total = float(parsed.get("detected_total") or 0.0)
+        amount = _extract_amount_from_lines(lines, detected_total)
+        receipt_number = _extract_receipt_number(lines)
+        receipt_date = _extract_receipt_date(lines)
+        category = _suggest_category(lines)
+        description = " ".join(lines[:5]).strip() or "Uploaded receipt"
+        if len(description) > 180:
+            description = description[:180]
+        points = round(amount * POINTS_PER_USD, 2)
+
         return {
             "status": "ok",
-            "category": data.get("category", "EV charging"),
-            "date": data.get("date", datetime.now().strftime("%Y-%m-%d")),
-            "receiptNumber": data.get("receiptNumber", "N/A"),
+            "category": category,
+            "date": receipt_date,
+            "receiptNumber": receipt_number,
             "amount": amount,
             "estimatedPoints": points,
-            "description": data.get("description", "Uploaded receipt"),
-            "model": "gemini-flash-v2"
+            "description": description,
+            "linesPreview": lines[:12],
+            "lineCount": len(lines),
+            "model": "easyocr",
+            "warning": "Could not detect a total amount confidently." if amount <= 0 else None,
         }
-
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "Image analysis timed out")
     except Exception as e:
-        print(f"Gemini analysis failed: {e}")
-        raise HTTPException(502, f"AI analysis failed: {str(e)}")
+        raise HTTPException(502, f"Image analysis failed: {str(e)}")
     finally:
-        pass
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 @app.post("/api/claims")
 def submit_claim(req: ClaimRequest, authorization: str = Header(None)):
@@ -598,6 +604,12 @@ def submit_claim(req: ClaimRequest, authorization: str = Header(None)):
 @app.get("/api/marketplace")
 def get_marketplace(type: Optional[str] = None):
     items = db.get_all("marketplace")
+    if not items:
+        try:
+            db.seed()
+            items = db.get_all("marketplace")
+        except Exception:
+            items = []
     if type:
         items = [i for i in items if i.get("type") == type]
     return items
@@ -809,9 +821,15 @@ async def ai_chat(req: AiChatRequest):
                     reply = "I could not generate a response right now."
                 return {"reply": reply, "source": "gemini", "model": model}
     except Exception as e:
-        raise HTTPException(502, f"Gemini request failed: {str(e)}")
+        return {
+            "reply": f"Gemini is temporarily unavailable. {str(e)}",
+            "source": "gemini-error",
+        }
 
-    raise HTTPException(502, f"No compatible Gemini model found from: {', '.join(tried)}")
+    return {
+        "reply": f"No compatible Gemini model found. Tried: {', '.join(tried)}",
+        "source": "gemini-error",
+    }
 
 
 @app.post("/api/ai/speech-to-text")
