@@ -129,7 +129,7 @@ export default function Dashboard() {
 
             <div>
               <h3 style={{ margin: "0 0 4px", fontWeight: 700, opacity: 0.9, fontSize: 15 }}>Points Wallet</h3>
-              <div style={{ fontSize: 13, opacity: 0.75, fontWeight: 500 }}>(1/3)$ ≈ 1 GP</div>
+              <div style={{ fontSize: 13, opacity: 0.75, fontWeight: 500 }}>$1.00 ≈ 0.5 GP</div>
             </div>
 
             <div style={{ margin: "20px 0" }}>
