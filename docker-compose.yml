@@ -1,0 +1,9 @@
+# Actian VectorAI DB is managed by the cloned repo:
+#   actian-vectorAI-db-beta/docker-compose.yml
+#
+# Start it with:
+#   cd actian-vectorAI-db-beta && docker compose up -d
+#
+# This file is intentionally empty – no PostgreSQL needed.
+
+

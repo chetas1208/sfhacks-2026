@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  REVIEWER
+  ADMIN
+}
+
+enum ClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VerificationTier {
+  T1
+  T2
+}
+
+enum TransactionType {
+  MINT
+  REDEEM
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUST
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String?   // For Credentials provider
+  name          String?
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  claims        Claim[]
+  votes         ClaimVote[]
+  ledger        LedgerTransaction[] @relation("AccountUser")
+  counterparty  LedgerTransaction[] @relation("CounterpartyUser")
+  redemptions   Redemption[]
+  quizAttempts  QuizAttempt[]
+  multiplier    UserMultiplier?
+}
+
+model ActionType {
+  id          String   @id @default(cuid())
+  code        String   @unique // e.g., BIKE_TO_CAMPUS
+  title       String
+  baseCredits Int
+  claims      Claim[]
+}
+
+model Claim {
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id])
+  actionTypeId     String
+  actionType       ActionType       @relation(fields: [actionTypeId], references: [id])
+  description      String
+  occurredAt       DateTime
+  submittedAt      DateTime         @default(now())
+  status           ClaimStatus      @default(PENDING)
+  verificationTier VerificationTier @default(T1)
+  
+  // Evidence
+  evidenceUrl      String?
+  evidenceHash     String?          // SHA256 for anti-double-claim
+  timeBucket       String?          // YYYY-MM-DD-HH for uniqueness check
+  
+  // Verification
+  aiHintJson       String?          // JSON string: { labelGuess, confidence, extractedFields, warnings }
+  creditsAwarded   Int?
+  
+  votes            ClaimVote[]
+  transactions     LedgerTransaction[]
+}
+
+model ClaimVote {
+  id         String   @id @default(cuid())
+  claimId    String
+  claim      Claim    @relation(fields: [claimId], references: [id])
+  reviewerId String
+  reviewer   User     @relation(fields: [reviewerId], references: [id])
+  vote       Boolean  // true = APPROVE, false = REJECT
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([claimId, reviewerId]) // One vote per reviewer per claim
+}
+
+model LedgerTransaction {
+  id                 String          @id @default(cuid())
+  accountUserId      String
+  accountUser        User            @relation("AccountUser", fields: [accountUserId], references: [id])
+  type               TransactionType
+  amount             Int             // Positive for MINT/TRANSFER_IN, Negative for REDEEM/TRANSFER_OUT
+  
+  // Metadata references
+  claimId            String?
+  claim              Claim?          @relation(fields: [claimId], references: [id])
+  redemptionId       String?
+  redemption         Redemption?     @relation(fields: [redemptionId], references: [id])
+  counterpartyUserId String?
+  counterpartyUser   User?           @relation("CounterpartyUser", fields: [counterpartyUserId], references: [id])
+  
+  memo               String?
+  createdAt          DateTime        @default(now())
+}
+
+model Reward {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  cost        Int
+  active      Boolean  @default(true)
+  inventory   Int?     // Optional
+  redemptions Redemption[]
+}
+
+model Redemption {
+  id           String             @id @default(cuid())
+  userId       String
+  user         User               @relation(fields: [userId], references: [id])
+  rewardId     String
+  reward       Reward             @relation(fields: [rewardId], references: [id])
+  cost         Int
+  status       String             @default("COMPLETED") // Could be PENDING/FULFILLED
+  createdAt    DateTime           @default(now())
+  transactions LedgerTransaction[]
+}
+
+model Lesson {
+  id        String   @id @default(cuid())
+  title     String
+  contentMd String   @db.Text
+  quizzes   Quiz[]
+}
+
+model Quiz {
+  id            String   @id @default(cuid())
+  lessonId      String
+  lesson        Lesson   @relation(fields: [lessonId], references: [id])
+  questionsJson String   // JSON string: [{ question, options[], correctIndex }]
+  attempts      QuizAttempt[]
+}
+
+model QuizAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  quizId    String
+  quiz      Quiz     @relation(fields: [quizId], references: [id])
+  score     Int
+  passed    Boolean
+  createdAt DateTime @default(now())
+}
+
+model UserMultiplier {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id])
+  multiplier Float
+  expiresAt DateTime
+}
